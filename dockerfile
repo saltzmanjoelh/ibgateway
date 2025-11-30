@@ -21,6 +21,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     xdotool \
     wmctrl \
+    scrot \
+    imagemagick \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
@@ -46,7 +48,13 @@ RUN chmod +x /automate-ibgateway.sh
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 5900
+COPY screenshot-service.sh /screenshot-service.sh
+RUN chmod +x /screenshot-service.sh
+
+COPY screenshot-server.py /screenshot-server.py
+RUN chmod +x /screenshot-server.py
+
+EXPOSE 5900 8080
 
 CMD ["/entrypoint.sh"]
 
