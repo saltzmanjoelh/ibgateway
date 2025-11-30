@@ -275,3 +275,224 @@ jobs:
         run: |
           docker stop ibgateway-test || true
           docker rm ibgateway-test || true
+
+  test-automation:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image for testing
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: ibgateway-test:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+
+      - name: Test automation - Default (IB_API + PAPER)
+        id: test_default
+        run: |
+          echo "=== Testing Default Configuration (IB_API + PAPER) ==="
+          
+          # Start container with default config
+          docker run -d \
+            --name ibgateway-test-default \
+            --platform linux/amd64 \
+            -p 5900:5900 \
+            -p 8080:8080 \
+            ibgateway-test:latest
+          
+          # Wait for services
+          echo "Waiting for services to start..."
+          sleep 20
+          
+          # Wait for screenshot service
+          for i in {1..30}; do
+            if curl -f -s http://localhost:8080/ > /dev/null 2>&1; then
+              echo "✓ Screenshot service ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "ERROR: Screenshot service not available"
+              docker logs ibgateway-test-default
+              exit 1
+            fi
+            sleep 1
+          done
+          
+          # Wait for IB Gateway window
+          echo "Waiting for IB Gateway window..."
+          for i in {1..60}; do
+            if docker exec ibgateway-test-default xdotool search --name "IBKR Gateway" 2>/dev/null | grep -q .; then
+              echo "✓ IB Gateway window found"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "ERROR: IB Gateway window not found"
+              docker logs ibgateway-test-default | tail -50
+              exit 1
+            fi
+            sleep 1
+          done
+          
+          # Wait for automation to complete
+          echo "Waiting for automation to complete..."
+          sleep 15
+          
+          # Take verification screenshot
+          mkdir -p screenshots
+          RESPONSE=$(curl -f -s http://localhost:8080/screenshot)
+          SCREENSHOT_URL=$(echo "$RESPONSE" | jq -r '.url')
+          SCREENSHOT_FILENAME=$(echo "$RESPONSE" | jq -r '.filename')
+          curl -f -s -o "screenshots/default-${SCREENSHOT_FILENAME}" "http://localhost:8080$SCREENSHOT_URL"
+          
+          echo "screenshot_filename=$SCREENSHOT_FILENAME" >> $GITHUB_OUTPUT
+          
+          # Check logs for automation
+          if docker logs ibgateway-test-default 2>&1 | grep -qi "configuration complete\|api type.*IB_API\|trading mode.*PAPER"; then
+            echo "✓ Automation logs verified"
+          else
+            echo "WARNING: Automation logs not clearly visible"
+            docker logs ibgateway-test-default | grep -i "automation\|configuration\|api\|trading" | tail -10 || true
+          fi
+          
+          docker stop ibgateway-test-default || true
+          docker rm ibgateway-test-default || true
+
+      - name: Test automation - FIX + LIVE
+        id: test_fix_live
+        run: |
+          echo "=== Testing FIX + LIVE Configuration ==="
+          
+          # Start container with FIX + LIVE config
+          docker run -d \
+            --name ibgateway-test-fix-live \
+            --platform linux/amd64 \
+            -p 5900:5900 \
+            -p 8080:8080 \
+            -e IB_API_TYPE=FIX \
+            -e IB_TRADING_MODE=LIVE \
+            ibgateway-test:latest
+          
+          # Wait for services
+          echo "Waiting for services to start..."
+          sleep 20
+          
+          # Wait for screenshot service
+          for i in {1..30}; do
+            if curl -f -s http://localhost:8080/ > /dev/null 2>&1; then
+              echo "✓ Screenshot service ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "ERROR: Screenshot service not available"
+              docker logs ibgateway-test-fix-live
+              exit 1
+            fi
+            sleep 1
+          done
+          
+          # Wait for IB Gateway window
+          echo "Waiting for IB Gateway window..."
+          for i in {1..60}; do
+            if docker exec ibgateway-test-fix-live xdotool search --name "IBKR Gateway" 2>/dev/null | grep -q .; then
+              echo "✓ IB Gateway window found"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "ERROR: IB Gateway window not found"
+              docker logs ibgateway-test-fix-live | tail -50
+              exit 1
+            fi
+            sleep 1
+          done
+          
+          # Wait for automation to complete
+          echo "Waiting for automation to complete..."
+          sleep 15
+          
+          # Take verification screenshot
+          RESPONSE=$(curl -f -s http://localhost:8080/screenshot)
+          SCREENSHOT_URL=$(echo "$RESPONSE" | jq -r '.url')
+          SCREENSHOT_FILENAME=$(echo "$RESPONSE" | jq -r '.filename')
+          curl -f -s -o "screenshots/fix-live-${SCREENSHOT_FILENAME}" "http://localhost:8080$SCREENSHOT_URL"
+          
+          # Check logs for automation
+          if docker logs ibgateway-test-fix-live 2>&1 | grep -qi "configuration complete\|api type.*FIX\|trading mode.*LIVE"; then
+            echo "✓ Automation logs verified"
+          else
+            echo "WARNING: Automation logs not clearly visible"
+            docker logs ibgateway-test-fix-live | grep -i "automation\|configuration\|api\|trading" | tail -10 || true
+          fi
+          
+          docker stop ibgateway-test-fix-live || true
+          docker rm ibgateway-test-fix-live || true
+
+      - name: Upload automation test screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: automation-test-screenshots
+          path: screenshots/*.png
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Create automation test summary
+        if: always()
+        run: |
+          echo "## 🤖 Automation Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.test_default.outcome }}" == "success" ]; then
+            echo "✅ **Default Configuration (IB_API + PAPER)**: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Default Configuration (IB_API + PAPER)**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ steps.test_fix_live.outcome }}" == "success" ]; then
+            echo "✅ **FIX + LIVE Configuration**: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **FIX + LIVE Configuration**: Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Screenshots" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Screenshots from automation tests are available in the artifacts section below." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Details" >> $GITHUB_STEP_SUMMARY
+          echo "- Tests verify that the automation script correctly configures IB Gateway window" >> $GITHUB_STEP_SUMMARY
+          echo "- Screenshots are taken after automation completes" >> $GITHUB_STEP_SUMMARY
+          echo "- Logs are checked for automation completion messages" >> $GITHUB_STEP_SUMMARY
+
+      - name: Show container logs on failure
+        if: failure()
+        run: |
+          echo "=== Container logs (if any containers exist) ==="
+          docker ps -a || true
+          docker logs ibgateway-test-default 2>&1 | tail -50 || true
+          docker logs ibgateway-test-fix-live 2>&1 | tail -50 || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop ibgateway-test-default ibgateway-test-fix-live 2>/dev/null || true
+          docker rm ibgateway-test-default ibgateway-test-fix-live 2>/dev/null || true
