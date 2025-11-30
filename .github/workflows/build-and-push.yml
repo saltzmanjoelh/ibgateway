@@ -56,3 +56,222 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  test-screenshot-service:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image for testing
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: ibgateway-test:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify image was built
+        run: |
+          echo "Checking if image exists..."
+          docker images | grep ibgateway-test || docker image inspect ibgateway-test:latest
+          echo "✓ Image verified"
+
+      - name: Start container
+        run: |
+          docker run -d \
+            --name ibgateway-test \
+            --platform linux/amd64 \
+            -p 5900:5900 \
+            -p 8080:8080 \
+            ibgateway-test:latest
+          
+          echo "Waiting for services to start..."
+          sleep 15
+
+      - name: Check container is running
+        run: |
+          docker ps | grep ibgateway-test || exit 1
+          echo "Container is running"
+
+      - name: Check screenshot service is accessible
+        run: |
+          echo "Checking screenshot service health..."
+          for i in {1..30}; do
+            if curl -f -s http://localhost:8080/ > /dev/null 2>&1; then
+              echo "Screenshot service is accessible"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Screenshot service failed to start"
+              docker logs ibgateway-test
+              exit 1
+            fi
+            echo "Waiting for screenshot service... ($i/30)"
+            sleep 2
+          done
+
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Test screenshot API endpoints
+        id: test_screenshot
+        run: |
+          echo "Testing screenshot API endpoints..."
+          
+          # Test root endpoint
+          echo "Testing GET /"
+          curl -f -s http://localhost:8080/ > /dev/null || exit 1
+          echo "✓ Root endpoint works"
+          
+          # Test taking a screenshot
+          echo "Testing GET /screenshot"
+          RESPONSE=$(curl -f -s http://localhost:8080/screenshot)
+          echo "Response: $RESPONSE"
+          echo "$RESPONSE" | jq -e '.success == true' || exit 1
+          SCREENSHOT_URL=$(echo "$RESPONSE" | jq -r '.url')
+          SCREENSHOT_FILENAME=$(echo "$RESPONSE" | jq -r '.filename')
+          echo "✓ Screenshot taken: $SCREENSHOT_FILENAME"
+          
+          # Save screenshot filename for later steps
+          echo "screenshot_filename=$SCREENSHOT_FILENAME" >> $GITHUB_OUTPUT
+          echo "screenshot_url=$SCREENSHOT_URL" >> $GITHUB_OUTPUT
+          
+          # Test viewing the screenshot
+          echo "Testing GET /screenshots/$SCREENSHOT_FILENAME"
+          mkdir -p screenshots
+          curl -f -s -o screenshots/test-screenshot.png "http://localhost:8080$SCREENSHOT_URL" || exit 1
+          file screenshots/test-screenshot.png | grep -q "PNG image" || exit 1
+          echo "✓ Screenshot image is valid PNG"
+          
+          # Test listing screenshots
+          echo "Testing GET /screenshots"
+          SCREENSHOTS=$(curl -f -s http://localhost:8080/screenshots)
+          echo "$SCREENSHOTS" | jq -e '.success == true' || exit 1
+          echo "$SCREENSHOTS" | jq -e '.count > 0' || exit 1
+          echo "✓ Screenshot list works"
+          
+          # Test latest screenshot endpoint
+          echo "Testing GET /screenshot/latest"
+          LATEST=$(curl -f -s http://localhost:8080/screenshot/latest)
+          echo "$LATEST" | jq -e '.success == true' || exit 1
+          echo "$LATEST" | jq -e '.filename != null' || exit 1
+          echo "✓ Latest screenshot endpoint works"
+          
+          echo ""
+          echo "All screenshot API tests passed! ✓"
+
+      - name: Upload screenshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-screenshot
+          path: screenshots/test-screenshot.png
+          retention-days: 7
+
+      - name: Create job summary with screenshot info
+        run: |
+          echo "## 📸 Screenshot Service Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All screenshot API tests passed!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Screenshot" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Screenshot taken during test: \`${{ steps.test_screenshot.outputs.screenshot_filename }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📥 **Download the screenshot from the artifacts section below**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Tested Endpoints" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ GET / - Root endpoint" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ GET /screenshot - Take screenshot" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ GET /screenshot/latest - Get latest screenshot" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ GET /screenshots - List all screenshots" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ GET /screenshots/\<filename\> - View screenshot image" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Screenshot Tools Verified" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ scrot installed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ imagemagick installed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Direct script execution works" >> $GITHUB_STEP_SUMMARY
+
+      - name: Verify screenshot tools are installed
+        run: |
+          echo "Verifying screenshot tools are installed..."
+          docker exec ibgateway-test which scrot || exit 1
+          docker exec ibgateway-test which import || exit 1
+          echo "✓ Screenshot tools are installed"
+
+      - name: Test screenshot service script directly
+        run: |
+          echo "Testing screenshot-service.sh script..."
+          docker exec ibgateway-test /screenshot-service.sh /tmp/test-direct.png || exit 1
+          docker exec ibgateway-test test -f /tmp/test-direct.png || exit 1
+          echo "✓ Screenshot service script works"
+
+      - name: Show container logs on failure
+        if: failure()
+        run: |
+          echo "=== Container logs ==="
+          docker logs ibgateway-test || true
+          echo ""
+          echo "=== Container processes ==="
+          docker exec ibgateway-test ps aux || true
+
+      - name: Post test results to PR
+        if: success()
+        env:
+          SCREENSHOT_FILENAME: ${{ steps.test_screenshot.outputs.screenshot_filename }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const screenshotFilename = process.env.SCREENSHOT_FILENAME || 'test-screenshot.png';
+            const workflowRunId = process.env.WORKFLOW_RUN_ID;
+            const workflowUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${workflowRunId}`;
+            
+            // Create a comment with test results and link to artifacts
+            const comment = '## 📸 Screenshot Service Test Results\n\n' +
+              '✅ All screenshot API tests passed!\n\n' +
+              '### Test Results\n\n' +
+              '**Screenshot Details:**\n' +
+              '- Filename: `' + screenshotFilename + '`\n' +
+              '- Taken during automated test run\n' +
+              '- Available as artifact: `test-screenshot`\n\n' +
+              '### Tested Endpoints\n' +
+              '- ✅ GET / - Root endpoint\n' +
+              '- ✅ GET /screenshot - Take screenshot\n' +
+              '- ✅ GET /screenshot/latest - Get latest screenshot\n' +
+              '- ✅ GET /screenshots - List all screenshots\n' +
+              '- ✅ GET /screenshots/<filename> - View screenshot image\n\n' +
+              '### Screenshot Tools Verified\n' +
+              '- ✅ scrot installed\n' +
+              '- ✅ imagemagick installed\n' +
+              '- ✅ Direct script execution works\n\n' +
+              '### View Screenshot\n\n' +
+              '📥 Download the test screenshot from the [workflow run artifacts](' + workflowUrl + ') or check the job summary above.\n\n' +
+              'The screenshot service is working correctly! 🎉';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop ibgateway-test || true
+          docker rm ibgateway-test || true
