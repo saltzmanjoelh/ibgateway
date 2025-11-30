@@ -56,3 +56,134 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  test-screenshot-service:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image for testing
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./dockerfile
+          platforms: linux/amd64
+          push: false
+          tags: ibgateway-test:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Start container
+        run: |
+          docker run -d \
+            --name ibgateway-test \
+            --platform linux/amd64 \
+            -p 5900:5900 \
+            -p 8080:8080 \
+            ibgateway-test:latest
+          
+          echo "Waiting for services to start..."
+          sleep 15
+
+      - name: Check container is running
+        run: |
+          docker ps | grep ibgateway-test || exit 1
+          echo "Container is running"
+
+      - name: Check screenshot service is accessible
+        run: |
+          echo "Checking screenshot service health..."
+          for i in {1..30}; do
+            if curl -f -s http://localhost:8080/ > /dev/null 2>&1; then
+              echo "Screenshot service is accessible"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Screenshot service failed to start"
+              docker logs ibgateway-test
+              exit 1
+            fi
+            echo "Waiting for screenshot service... ($i/30)"
+            sleep 2
+          done
+
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Test screenshot API endpoints
+        run: |
+          echo "Testing screenshot API endpoints..."
+          
+          # Test root endpoint
+          echo "Testing GET /"
+          curl -f -s http://localhost:8080/ > /dev/null || exit 1
+          echo "✓ Root endpoint works"
+          
+          # Test taking a screenshot
+          echo "Testing GET /screenshot"
+          RESPONSE=$(curl -f -s http://localhost:8080/screenshot)
+          echo "Response: $RESPONSE"
+          echo "$RESPONSE" | jq -e '.success == true' || exit 1
+          SCREENSHOT_URL=$(echo "$RESPONSE" | jq -r '.url')
+          SCREENSHOT_FILENAME=$(echo "$RESPONSE" | jq -r '.filename')
+          echo "✓ Screenshot taken: $SCREENSHOT_FILENAME"
+          
+          # Test viewing the screenshot
+          echo "Testing GET /screenshots/$SCREENSHOT_FILENAME"
+          curl -f -s -o /tmp/test-screenshot.png "http://localhost:8080$SCREENSHOT_URL" || exit 1
+          file /tmp/test-screenshot.png | grep -q "PNG image" || exit 1
+          echo "✓ Screenshot image is valid PNG"
+          
+          # Test listing screenshots
+          echo "Testing GET /screenshots"
+          SCREENSHOTS=$(curl -f -s http://localhost:8080/screenshots)
+          echo "$SCREENSHOTS" | jq -e '.success == true' || exit 1
+          echo "$SCREENSHOTS" | jq -e '.count > 0' || exit 1
+          echo "✓ Screenshot list works"
+          
+          # Test latest screenshot endpoint
+          echo "Testing GET /screenshot/latest"
+          LATEST=$(curl -f -s http://localhost:8080/screenshot/latest)
+          echo "$LATEST" | jq -e '.success == true' || exit 1
+          echo "$LATEST" | jq -e '.filename != null' || exit 1
+          echo "✓ Latest screenshot endpoint works"
+          
+          echo ""
+          echo "All screenshot API tests passed! ✓"
+
+      - name: Verify screenshot tools are installed
+        run: |
+          echo "Verifying screenshot tools are installed..."
+          docker exec ibgateway-test which scrot || exit 1
+          docker exec ibgateway-test which import || exit 1
+          echo "✓ Screenshot tools are installed"
+
+      - name: Test screenshot service script directly
+        run: |
+          echo "Testing screenshot-service.sh script..."
+          docker exec ibgateway-test /screenshot-service.sh /tmp/test-direct.png || exit 1
+          docker exec ibgateway-test test -f /tmp/test-direct.png || exit 1
+          echo "✓ Screenshot service script works"
+
+      - name: Show container logs on failure
+        if: failure()
+        run: |
+          echo "=== Container logs ==="
+          docker logs ibgateway-test || true
+          echo ""
+          echo "=== Container processes ==="
+          docker exec ibgateway-test ps aux || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop ibgateway-test || true
+          docker rm ibgateway-test || true
