@@ -235,34 +235,26 @@ jobs:
             const workflowUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${workflowRunId}`;
             
             // Create a comment with test results and link to artifacts
-            const comment = `## 📸 Screenshot Service Test Results
-            
-✅ All screenshot API tests passed!
-
-### Test Results
-
-**Screenshot Details:**
-- Filename: \`${screenshotFilename}\`
-- Taken during automated test run
-- Available as artifact: \`test-screenshot\`
-
-### Tested Endpoints
-- ✅ GET / - Root endpoint
-- ✅ GET /screenshot - Take screenshot  
-- ✅ GET /screenshot/latest - Get latest screenshot
-- ✅ GET /screenshots - List all screenshots
-- ✅ GET /screenshots/<filename> - View screenshot image
-
-### Screenshot Tools Verified
-- ✅ scrot installed
-- ✅ imagemagick installed
-- ✅ Direct script execution works
-
-### View Screenshot
-
-📥 Download the test screenshot from the [workflow run artifacts](${workflowUrl}) or check the job summary above.
-
-The screenshot service is working correctly! 🎉`;
+            const comment = '## 📸 Screenshot Service Test Results\n\n' +
+              '✅ All screenshot API tests passed!\n\n' +
+              '### Test Results\n\n' +
+              '**Screenshot Details:**\n' +
+              '- Filename: `' + screenshotFilename + '`\n' +
+              '- Taken during automated test run\n' +
+              '- Available as artifact: `test-screenshot`\n\n' +
+              '### Tested Endpoints\n' +
+              '- ✅ GET / - Root endpoint\n' +
+              '- ✅ GET /screenshot - Take screenshot\n' +
+              '- ✅ GET /screenshot/latest - Get latest screenshot\n' +
+              '- ✅ GET /screenshots - List all screenshots\n' +
+              '- ✅ GET /screenshots/<filename> - View screenshot image\n\n' +
+              '### Screenshot Tools Verified\n' +
+              '- ✅ scrot installed\n' +
+              '- ✅ imagemagick installed\n' +
+              '- ✅ Direct script execution works\n\n' +
+              '### View Screenshot\n\n' +
+              '📥 Download the test screenshot from the [workflow run artifacts](' + workflowUrl + ') or check the job summary above.\n\n' +
+              'The screenshot service is working correctly! 🎉';
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
