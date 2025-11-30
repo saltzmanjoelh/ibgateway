@@ -1,161 +1,164 @@
 #!/bin/bash
-# Example script to automate IB Gateway GUI interactions
+# Script to automate IB Gateway GUI interactions
 # This uses xdotool to control the IB Gateway window
+#
+# Environment Variables:
+#   IB_API_TYPE: "FIX" or "IB_API" (default: "IB_API")
+#   IB_TRADING_MODE: "LIVE" or "PAPER" (default: "PAPER")
+#
+# Example usage:
+#   IB_API_TYPE=FIX IB_TRADING_MODE=LIVE /automate-ibgateway.sh
 
 set -e
 export DISPLAY=:99
 
-# Function to find the actual content window (not the 1x1 parent)
-find_content_window() {
-    local parent_id=$1
-    echo "=== Inspecting window hierarchy for window $parent_id ==="
-    
-    # Get window tree
-    xwininfo -tree -id "$parent_id" 2>/dev/null | head -50
-    
-    # Find child windows that are actually visible (larger than 1x1)
-    echo ""
-    echo "=== Searching for content windows ==="
-    xdotool search --all --pid $(xdotool getwindowpid "$parent_id" 2>/dev/null || echo "") 2>/dev/null | while read win_id; do
-        if [ "$win_id" != "$parent_id" ]; then
-            geom=$(xdotool getwindowgeometry --shell "$win_id" 2>/dev/null)
-            width=$(echo "$geom" | grep WIDTH | cut -d'=' -f2)
-            height=$(echo "$geom" | grep HEIGHT | cut -d'=' -f2)
-            name=$(xdotool getwindowname "$win_id" 2>/dev/null || echo "(no name)")
-            
-            # Only show windows that are reasonably sized
-            if [ -n "$width" ] && [ -n "$height" ] && [ "$width" -gt 10 ] && [ "$height" -gt 10 ]; then
-                echo "Window $win_id: ${width}x${height} - '$name'"
-            fi
-        fi
-    done
-}
+# Configuration from environment variables with defaults
+IB_API_TYPE="${IB_API_TYPE:-IB_API}"  # Default: IB_API
+IB_TRADING_MODE="${IB_TRADING_MODE:-PAPER}"  # Default: PAPER
 
-# Function to list all windows and their properties
-list_window_elements() {
-    local window_id=$1
-    echo ""
-    echo "=== Listing all accessible windows ==="
-    
-    # Get all windows
-    xdotool search --all --desktop 0 2>/dev/null | while read win_id; do
-        name=$(xdotool getwindowname "$win_id" 2>/dev/null || echo "(no name)")
-        class=$(xdotool getwindowclassname "$win_id" 2>/dev/null || echo "(no class)")
-        geom=$(xdotool getwindowgeometry --shell "$win_id" 2>/dev/null)
-        width=$(echo "$geom" | grep WIDTH | cut -d'=' -f2 2>/dev/null || echo "?")
-        height=$(echo "$geom" | grep HEIGHT | cut -d'=' -f2 2>/dev/null || echo "?")
-        x=$(echo "$geom" | grep X | head -1 | cut -d'=' -f2 2>/dev/null || echo "?")
-        y=$(echo "$geom" | grep Y | head -1 | cut -d'=' -f2 2>/dev/null || echo "?")
-        
-        # Show windows that might be interactive elements
-        if [ "$width" != "?" ] && [ "$height" != "?" ] && [ "$width" -gt 5 ] && [ "$height" -gt 5 ]; then
-            echo "ID: $win_id | ${width}x${height} @ ($x,$y) | Class: $class | Name: $name"
-        fi
-    done
-}
+# Normalize values to uppercase
+IB_API_TYPE=$(echo "$IB_API_TYPE" | tr '[:lower:]' '[:upper:]')
+IB_TRADING_MODE=$(echo "$IB_TRADING_MODE" | tr '[:lower:]' '[:upper:]')
 
-# Function to get window properties that might indicate button/field types
-inspect_window_properties() {
-    local window_id=$1
-    echo ""
-    echo "=== Window properties for $window_id ==="
-    xprop -id "$window_id" 2>/dev/null | grep -E "WM_NAME|WM_CLASS|WM_WINDOW_ROLE|_NET_WM_WINDOW_TYPE" || echo "Limited property support (no window manager)"
-}
-
-# Function to click the IB API button
-click_ib_api_button() {
-    local content_window=$1
-    echo ""
-    echo "=== Clicking IB API button ==="
-    
-    # The IB API button is in the API Type section, upper-middle area
-    # Based on 790x610 window, approximate coordinates:
-    # - API Type section is roughly around y=150-200
-    # - IB API button is to the right of FIX CTCI, roughly around x=450-550
-    
-    # Try clicking at approximate location (adjust these coordinates as needed)
-    local button_x=500
-    local button_y=175
-    
-    echo "Attempting to click IB API button at coordinates ($button_x, $button_y) relative to content window"
-    
-    # Move mouse to the button location and click
-    xdotool mousemove --window "$content_window" "$button_x" "$button_y"
-    sleep 0.5
-    xdotool click --window "$content_window" 1
-    
-    echo "Click sent to IB API button"
-}
-
-# Function to help find button coordinates interactively
-find_button_coordinates() {
-    local content_window=$1
-    echo ""
-    echo "=== Interactive coordinate finder ==="
-    echo "Content window ID: $content_window"
-    echo "Window size: 790x610"
-    echo ""
-    echo "To find the exact coordinates of the IB API button:"
-    echo "1. Move your mouse over the IB API button in the noVNC viewer"
-    echo "2. Run this command in another terminal:"
-    echo "   xdotool getmouselocation"
-    echo ""
-    echo "Or use this to click at different coordinates:"
-    echo "   xdotool mousemove --window $content_window <X> <Y>"
-    echo "   xdotool click --window $content_window 1"
-    echo ""
-    echo "Suggested coordinates to try (relative to content window):"
-    echo "  - X: 450-550 (horizontal position)"
-    echo "  - Y: 150-200 (vertical position, API Type section)"
-}
-
-# Wait for IB Gateway window to appear
-echo "Waiting for IB Gateway window..."
-timeout=60
-elapsed=0
-WINDOW_ID=""
-
-while [ $elapsed -lt $timeout ]; do
-    # Try multiple search methods to find IB Gateway window
-    WINDOW_ID=$(xdotool search --class "install4j-ibgateway-GWClient" 2>/dev/null | head -1)
-    if [ -z "$WINDOW_ID" ]; then
-        WINDOW_ID=$(xdotool search --name "IBKR Gateway" 2>/dev/null | head -1)
-    fi
-    if [ -z "$WINDOW_ID" ]; then
-        WINDOW_ID=$(xdotool search --all --name "IB" 2>/dev/null | head -1)
-    fi
-    
-    if [ -n "$WINDOW_ID" ]; then
-        echo "IB Gateway window found! Window ID: $WINDOW_ID"
-        break
-    fi
-    sleep 1
-    elapsed=$((elapsed + 1))
-done
-
-if [ -z "$WINDOW_ID" ]; then
-    echo "ERROR: IB Gateway window not found after ${timeout}s"
+# Validate values
+if [ "$IB_API_TYPE" != "FIX" ] && [ "$IB_API_TYPE" != "IB_API" ]; then
+    echo "ERROR: IB_API_TYPE must be 'FIX' or 'IB_API', got: $IB_API_TYPE"
     exit 1
 fi
 
-# Find the content window (the actual 790x610 window)
-CONTENT_WINDOW=$(xdotool search --name "IBKR Gateway" 2>/dev/null | head -1)
-if [ -z "$CONTENT_WINDOW" ]; then
-    echo "ERROR: Could not find content window"
+if [ "$IB_TRADING_MODE" != "LIVE" ] && [ "$IB_TRADING_MODE" != "PAPER" ]; then
+    echo "ERROR: IB_TRADING_MODE must be 'LIVE' or 'PAPER', got: $IB_TRADING_MODE"
     exit 1
 fi
 
-echo "Content window ID: $CONTENT_WINDOW"
-
-# Click the IB API button
-click_ib_api_button "$CONTENT_WINDOW"
-
-# Also show helper function for finding coordinates
-find_button_coordinates "$CONTENT_WINDOW"
-
+echo "=== IB Gateway Automation Configuration ==="
+echo "API Type: $IB_API_TYPE"
+echo "Trading Mode: $IB_TRADING_MODE"
 echo ""
-echo "=== Done ==="
 
-# xdotool mousemove --window 16777225 793 284
-# xdotool click --window 16777225 1  
+# Button coordinates (relative to content window, approximately 790x610)
+# These coordinates are estimates and may need adjustment based on actual window layout
+# API Type section: y ~150-200
+FIX_BUTTON_X=350
+FIX_BUTTON_Y=175
+IB_API_BUTTON_X=500
+IB_API_BUTTON_Y=175
 
+# Trading Mode section: y ~250-300
+LIVE_TRADING_BUTTON_X=350
+LIVE_TRADING_BUTTON_Y=275
+PAPER_TRADING_BUTTON_X=500
+PAPER_TRADING_BUTTON_Y=275
+
+# Function to safely click at coordinates
+click_at_coordinates() {
+    local content_window=$1
+    local x=$2
+    local y=$3
+    local button_name=$4
+    
+    echo "Clicking $button_name at coordinates ($x, $y)"
+    
+    # Move mouse to the button location
+    xdotool mousemove --window "$content_window" "$x" "$y"
+    sleep 0.3
+    
+    # Click
+    xdotool click --window "$content_window" 1
+    sleep 0.5
+    
+    echo "✓ Clicked $button_name"
+}
+
+# Function to click API Type button
+click_api_type_button() {
+    local content_window=$1
+    
+    echo ""
+    echo "=== Configuring API Type: $IB_API_TYPE ==="
+    
+    if [ "$IB_API_TYPE" = "FIX" ]; then
+        click_at_coordinates "$content_window" "$FIX_BUTTON_X" "$FIX_BUTTON_Y" "FIX CTCI"
+    else
+        click_at_coordinates "$content_window" "$IB_API_BUTTON_X" "$IB_API_BUTTON_Y" "IB API"
+    fi
+}
+
+# Function to click Trading Mode button
+click_trading_mode_button() {
+    local content_window=$1
+    
+    echo ""
+    echo "=== Configuring Trading Mode: $IB_TRADING_MODE ==="
+    
+    if [ "$IB_TRADING_MODE" = "LIVE" ]; then
+        click_at_coordinates "$content_window" "$LIVE_TRADING_BUTTON_X" "$LIVE_TRADING_BUTTON_Y" "Live Trading"
+    else
+        click_at_coordinates "$content_window" "$PAPER_TRADING_BUTTON_X" "$PAPER_TRADING_BUTTON_Y" "Paper Trading"
+    fi
+}
+
+# Function to find the IB Gateway content window
+find_ibgateway_window() {
+    local timeout=60
+    local elapsed=0
+    local window_id=""
+    
+    echo "Waiting for IB Gateway window to appear..."
+    
+    while [ $elapsed -lt $timeout ]; do
+        # Try multiple search methods to find IB Gateway window
+        window_id=$(xdotool search --class "install4j-ibgateway-GWClient" 2>/dev/null | head -1)
+        if [ -z "$window_id" ]; then
+            window_id=$(xdotool search --name "IBKR Gateway" 2>/dev/null | head -1)
+        fi
+        if [ -z "$window_id" ]; then
+            window_id=$(xdotool search --all --name "IB" 2>/dev/null | head -1)
+        fi
+        
+        if [ -n "$window_id" ]; then
+            echo "✓ IB Gateway window found! Window ID: $window_id"
+            echo "$window_id"
+            return 0
+        fi
+        
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+    
+    echo "ERROR: IB Gateway window not found after ${timeout}s"
+    return 1
+}
+
+# Main execution
+main() {
+    # Find the IB Gateway window
+    CONTENT_WINDOW=$(find_ibgateway_window)
+    if [ -z "$CONTENT_WINDOW" ]; then
+        exit 1
+    fi
+    
+    echo ""
+    echo "Content window ID: $CONTENT_WINDOW"
+    
+    # Wait a bit for the window to fully render
+    echo "Waiting for window to fully render..."
+    sleep 2
+    
+    # Click API Type button
+    click_api_type_button "$CONTENT_WINDOW"
+    
+    # Click Trading Mode button
+    click_trading_mode_button "$CONTENT_WINDOW"
+    
+    echo ""
+    echo "=== Configuration Complete ==="
+    echo "API Type: $IB_API_TYPE"
+    echo "Trading Mode: $IB_TRADING_MODE"
+    echo ""
+    echo "Note: If buttons were not clicked correctly, you may need to adjust"
+    echo "the coordinates in this script based on your actual window layout."
+}
+
+# Run main function
+main

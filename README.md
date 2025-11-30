@@ -131,14 +131,58 @@ done
 
 The image includes automation scripts for GUI interactions:
 
-- `automate-ibgateway.sh`: Example script using xdotool to interact with IB Gateway
+- `automate-ibgateway.sh`: Script using xdotool to automatically configure IB Gateway window
 - `run-ibgateway.sh`: Script to run IB Gateway under Xvfb
+
+### IB Gateway Configuration
+
+The `automate-ibgateway.sh` script automatically configures the IB Gateway window when it starts. You can control the configuration using environment variables:
+
+#### API Type Configuration
+
+- `IB_API_TYPE`: Choose between `FIX` or `IB_API` (default: `IB_API`)
+
+#### Trading Mode Configuration
+
+- `IB_TRADING_MODE`: Choose between `LIVE` or `PAPER` (default: `PAPER`)
+
+#### Examples
+
+**Default configuration (IB API + Paper Trading)**:
+```bash
+docker run --platform linux/amd64 \
+  -p 5900:5900 \
+  -p 8080:8080 \
+  -it --rm ibgateway
+```
+
+**FIX API with Live Trading**:
+```bash
+docker run --platform linux/amd64 \
+  -e IB_API_TYPE=FIX \
+  -e IB_TRADING_MODE=LIVE \
+  -p 5900:5900 \
+  -p 8080:8080 \
+  -it --rm ibgateway
+```
+
+**IB API with Paper Trading (explicit)**:
+```bash
+docker run --platform linux/amd64 \
+  -e IB_API_TYPE=IB_API \
+  -e IB_TRADING_MODE=PAPER \
+  -p 5900:5900 \
+  -p 8080:8080 \
+  -it --rm ibgateway
+```
 
 ## Environment Variables
 
 - `RESOLUTION`: Display resolution (default: `1280x800`)
 - `USER`: User to run as (default: `root`)
 - `SCREENSHOT_PORT`: Port for screenshot HTTP server (default: `8080`)
+- `IB_API_TYPE`: API type - `FIX` or `IB_API` (default: `IB_API`)
+- `IB_TRADING_MODE`: Trading mode - `LIVE` or `PAPER` (default: `PAPER`)
 
 ## Troubleshooting
 

@@ -50,6 +50,13 @@ echo "DISPLAY=$DISPLAY"
 
 /opt/ibgateway/ibgateway &
 
+# Wait for IB Gateway window to appear, then automate configuration
+echo "=== Waiting for IB Gateway to start, then automating configuration ==="
+sleep 5
+/automate-ibgateway.sh &
+AUTOMATE_PID=$!
+echo "Automation script started (PID: $AUTOMATE_PID)"
+
 # Start screenshot HTTP server on port 8080
 echo "=== Starting screenshot HTTP server on port 8080 ==="
 python3 /screenshot-server.py &
