@@ -78,9 +78,16 @@ jobs:
           file: ./dockerfile
           platforms: linux/amd64
           push: false
+          load: true
           tags: ibgateway-test:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Verify image was built
+        run: |
+          echo "Checking if image exists..."
+          docker images | grep ibgateway-test || docker image inspect ibgateway-test:latest
+          echo "✓ Image verified"
 
       - name: Start container
         run: |
