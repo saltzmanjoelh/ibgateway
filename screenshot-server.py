@@ -31,12 +31,27 @@ class ScreenshotHandler(BaseHTTPRequestHandler):
 
         # Serve screenshot files
         if path.startswith("/screenshots/") and path != "/screenshots":
-            filename = path.replace("/screenshots/", "")
+            filename = path.replace("/screenshots/", "", 1)
+            # Security: Prevent path traversal attacks
+            if ".." in filename or "/" in filename or "\\" in filename:
+                self.send_error(400, "Invalid filename")
+                return
+            # Security: Only allow PNG files
+            if not filename.endswith(".png"):
+                self.send_error(400, "Only PNG files are allowed")
+                return
+            # Security: Ensure the resolved path is within SCREENSHOT_DIR
             filepath = os.path.join(SCREENSHOT_DIR, filename)
+            real_path = os.path.realpath(filepath)
+            real_dir = os.path.realpath(SCREENSHOT_DIR)
+            if not real_path.startswith(real_dir):
+                self.send_error(403, "Access denied")
+                return
             if os.path.exists(filepath) and os.path.isfile(filepath):
                 self.send_response(200)
                 self.send_header("Content-type", "image/png")
-                self.send_header("Access-Control-Allow-Origin", "*")
+                # Security: Restrict CORS to localhost only (container internal)
+                self.send_header("Access-Control-Allow-Origin", "http://localhost")
                 self.end_headers()
                 with open(filepath, "rb") as f:
                     self.wfile.write(f.read())
@@ -62,7 +77,8 @@ class ScreenshotHandler(BaseHTTPRequestHandler):
                     
                     self.send_response(200)
                     self.send_header("Content-type", "application/json")
-                    self.send_header("Access-Control-Allow-Origin", "*")
+                    # Security: Restrict CORS to localhost only (container internal)
+                    self.send_header("Access-Control-Allow-Origin", "http://localhost")
                     self.end_headers()
                     response = {
                         "success": True,
@@ -88,7 +104,8 @@ class ScreenshotHandler(BaseHTTPRequestHandler):
                 
                 self.send_response(200)
                 self.send_header("Content-type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
+                # Security: Restrict CORS to localhost only (container internal)
+                self.send_header("Access-Control-Allow-Origin", "http://localhost")
                 self.end_headers()
                 response = {
                     "success": True,
@@ -121,7 +138,8 @@ class ScreenshotHandler(BaseHTTPRequestHandler):
             
             self.send_response(200)
             self.send_header("Content-type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            # Security: Restrict CORS to localhost only (container internal)
+            self.send_header("Access-Control-Allow-Origin", "http://localhost")
             self.end_headers()
             response = {
                 "success": True,
