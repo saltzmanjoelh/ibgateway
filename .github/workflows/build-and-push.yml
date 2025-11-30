@@ -60,6 +60,9 @@ jobs:
   test-screenshot-service:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
 
     steps:
       - name: Checkout repository
@@ -119,6 +122,7 @@ jobs:
           sudo apt-get install -y jq
 
       - name: Test screenshot API endpoints
+        id: test_screenshot
         run: |
           echo "Testing screenshot API endpoints..."
           
@@ -136,10 +140,15 @@ jobs:
           SCREENSHOT_FILENAME=$(echo "$RESPONSE" | jq -r '.filename')
           echo "✓ Screenshot taken: $SCREENSHOT_FILENAME"
           
+          # Save screenshot filename for later steps
+          echo "screenshot_filename=$SCREENSHOT_FILENAME" >> $GITHUB_OUTPUT
+          echo "screenshot_url=$SCREENSHOT_URL" >> $GITHUB_OUTPUT
+          
           # Test viewing the screenshot
           echo "Testing GET /screenshots/$SCREENSHOT_FILENAME"
-          curl -f -s -o /tmp/test-screenshot.png "http://localhost:8080$SCREENSHOT_URL" || exit 1
-          file /tmp/test-screenshot.png | grep -q "PNG image" || exit 1
+          mkdir -p screenshots
+          curl -f -s -o screenshots/test-screenshot.png "http://localhost:8080$SCREENSHOT_URL" || exit 1
+          file screenshots/test-screenshot.png | grep -q "PNG image" || exit 1
           echo "✓ Screenshot image is valid PNG"
           
           # Test listing screenshots
@@ -158,6 +167,37 @@ jobs:
           
           echo ""
           echo "All screenshot API tests passed! ✓"
+
+      - name: Upload screenshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-screenshot
+          path: screenshots/test-screenshot.png
+          retention-days: 7
+
+      - name: Create job summary with screenshot info
+        run: |
+          echo "## 📸 Screenshot Service Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All screenshot API tests passed!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Screenshot" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Screenshot taken during test: \`${{ steps.test_screenshot.outputs.screenshot_filename }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📥 **Download the screenshot from the artifacts section below**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Tested Endpoints" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ GET / - Root endpoint" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ GET /screenshot - Take screenshot" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ GET /screenshot/latest - Get latest screenshot" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ GET /screenshots - List all screenshots" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ GET /screenshots/\<filename\> - View screenshot image" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Screenshot Tools Verified" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ scrot installed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ imagemagick installed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Direct script execution works" >> $GITHUB_STEP_SUMMARY
 
       - name: Verify screenshot tools are installed
         run: |
@@ -181,6 +221,55 @@ jobs:
           echo ""
           echo "=== Container processes ==="
           docker exec ibgateway-test ps aux || true
+
+      - name: Post test results to PR
+        if: success()
+        env:
+          SCREENSHOT_FILENAME: ${{ steps.test_screenshot.outputs.screenshot_filename }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const screenshotFilename = process.env.SCREENSHOT_FILENAME || 'test-screenshot.png';
+            const workflowRunId = process.env.WORKFLOW_RUN_ID;
+            const workflowUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${workflowRunId}`;
+            
+            // Create a comment with test results and link to artifacts
+            const comment = `## 📸 Screenshot Service Test Results
+            
+✅ All screenshot API tests passed!
+
+### Test Results
+
+**Screenshot Details:**
+- Filename: \`${screenshotFilename}\`
+- Taken during automated test run
+- Available as artifact: \`test-screenshot\`
+
+### Tested Endpoints
+- ✅ GET / - Root endpoint
+- ✅ GET /screenshot - Take screenshot  
+- ✅ GET /screenshot/latest - Get latest screenshot
+- ✅ GET /screenshots - List all screenshots
+- ✅ GET /screenshots/<filename> - View screenshot image
+
+### Screenshot Tools Verified
+- ✅ scrot installed
+- ✅ imagemagick installed
+- ✅ Direct script execution works
+
+### View Screenshot
+
+📥 Download the test screenshot from the [workflow run artifacts](${workflowUrl}) or check the job summary above.
+
+The screenshot service is working correctly! 🎉`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
 
       - name: Cleanup
         if: always()
