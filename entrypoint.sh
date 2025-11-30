@@ -50,6 +50,12 @@ echo "DISPLAY=$DISPLAY"
 
 /opt/ibgateway/ibgateway &
 
+# Start screenshot HTTP server on port 8080
+echo "=== Starting screenshot HTTP server on port 8080 ==="
+python3 /screenshot-server.py &
+sleep 1
+echo "Screenshot service available at: http://localhost:8080/"
+
 # Start noVNC proxy with verbose logging
 # websockify listens on 5900 (web access) and proxies to VNC on 5901
 # This runs in FOREGROUND to keep the container alive
