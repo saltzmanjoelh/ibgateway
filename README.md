@@ -184,6 +184,42 @@ docker run --platform linux/amd64 \
 - `IB_API_TYPE`: API type - `FIX` or `IB_API` (default: `IB_API`)
 - `IB_TRADING_MODE`: Trading mode - `LIVE` or `PAPER` (default: `PAPER`)
 
+## Testing
+
+The repository includes test scripts to verify automation functionality:
+
+### Local Testing
+
+**Test automation script** (requires running container):
+```bash
+# Start container first
+docker run -d --name ibgateway-test --platform linux/amd64 -p 5900:5900 -p 8080:8080 ibgateway-test:latest
+
+# Run automation tests
+./test-automation.sh ibgateway-test
+```
+
+**CI-friendly test script**:
+```bash
+./test-automation-ci.sh ibgateway-test
+```
+
+**Compare screenshots** (optional, requires Pillow):
+```bash
+pip install Pillow
+./compare-screenshots.py screenshot1.png screenshot2.png
+```
+
+### Automated Testing
+
+Tests run automatically in GitHub Actions on pull requests:
+- **Default Configuration Test**: Verifies IB_API + PAPER configuration
+- **FIX + LIVE Test**: Verifies FIX + LIVE configuration
+- **Screenshot Verification**: Takes screenshots after automation for visual verification
+- **Log Verification**: Checks container logs for automation completion messages
+
+Test screenshots are uploaded as artifacts and can be downloaded from the workflow run.
+
 ## Troubleshooting
 
 ### VNC Connection Issues
