@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-numpy \
-    python3-tkinter \
+    python3-tk \
     net-tools \
     curl \
     xdotool \
