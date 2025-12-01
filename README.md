@@ -173,6 +173,7 @@ docker run --platform linux/amd64 \
   -e IB_TRADING_MODE=PAPER \
   -p 5900:5900 \
   -p 8080:8080 \
+  -v $(pwd)/automate-ibgateway.sh:/automate-ibgateway.sh \
   -it --rm ibgateway
 ```
 

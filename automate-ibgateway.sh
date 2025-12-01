@@ -38,17 +38,16 @@ echo ""
 
 # Button coordinates (relative to content window, approximately 790x610)
 # These coordinates are estimates and may need adjustment based on actual window layout
-# API Type section: y ~150-200
-FIX_BUTTON_X=410
-FIX_BUTTON_Y=177
-IB_API_BUTTON_X=525
-IB_API_BUTTON_Y=177
+FIX_BUTTON_X=500
+FIX_BUTTON_Y=300
+IB_API_BUTTON_X=700
+IB_API_BUTTON_Y=300
 
 # Trading Mode section: y ~250-300
-LIVE_TRADING_BUTTON_X=350
-LIVE_TRADING_BUTTON_Y=275
-PAPER_TRADING_BUTTON_X=525
-PAPER_TRADING_BUTTON_Y=275
+LIVE_TRADING_BUTTON_X=500
+LIVE_TRADING_BUTTON_Y=340
+PAPER_TRADING_BUTTON_X=700
+PAPER_TRADING_BUTTON_Y=300
 
 # Function to safely click at coordinates
 click_at_coordinates() {
