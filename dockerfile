@@ -5,7 +5,7 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV USER=root
-ENV RESOLUTION=1280x800
+ENV RESOLUTION=1024x768
 
 # 1. Update and install basic tools + Xvfb + VNC
 RUN apt-get update && apt-get install -y \
