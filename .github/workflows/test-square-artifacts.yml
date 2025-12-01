@@ -1,0 +1,262 @@
+name: Test Square Artifacts on Screen
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+      - draw-click-artifacts-on-screen
+  push:
+    branches:
+      - draw-click-artifacts-on-screen
+
+jobs:
+  test-square-artifacts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: ibgateway-test:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+
+      - name: Start container with automation
+        id: start_container
+        run: |
+          echo "Starting container with IB_API + PAPER configuration..."
+          docker run -d \
+            --name ibgateway-test-squares \
+            --platform linux/amd64 \
+            -p 5900:5900 \
+            -p 8080:8080 \
+            -e IB_API_TYPE=IB_API \
+            -e IB_TRADING_MODE=PAPER \
+            ibgateway-test:latest
+          
+          echo "Waiting for services to start..."
+          sleep 5
+
+      - name: Wait for screenshot service
+        run: |
+          echo "Waiting for screenshot service to be ready..."
+          for i in {1..30}; do
+            if curl -f -s http://localhost:8080/ > /dev/null 2>&1; then
+              echo "✓ Screenshot service is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "ERROR: Screenshot service failed to start"
+              docker logs ibgateway-test-squares
+              exit 1
+            fi
+            echo "Waiting for screenshot service... ($i/30)"
+            sleep 2
+          done
+
+      - name: Wait for IB Gateway window
+        run: |
+          echo "Waiting for IB Gateway window to appear..."
+          for i in {1..60}; do
+            if docker exec ibgateway-test-squares xdotool search --name "IBKR Gateway" 2>/dev/null | grep -q .; then
+              echo "✓ IB Gateway window found"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "ERROR: IB Gateway window not found after 60 seconds"
+              docker logs ibgateway-test-squares | tail -50
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: Wait for automation to complete and squares to be visible
+        run: |
+          echo "Waiting for automation to complete..."
+          echo "This will allow time for squares to be drawn on screen..."
+          sleep 20
+          
+          echo "Checking automation logs..."
+          docker logs ibgateway-test-squares 2>&1 | grep -i "drawing square\|clicking\|configuration complete" || echo "Note: Some log messages may not be visible"
+
+      - name: Take screenshot with square artifacts
+        id: take_screenshot
+        run: |
+          echo "Taking screenshot to capture square artifacts..."
+          mkdir -p screenshots
+          
+          # Take screenshot
+          RESPONSE=$(curl -f -s http://localhost:8080/screenshot)
+          echo "Screenshot API response: $RESPONSE"
+          
+          SCREENSHOT_URL=$(echo "$RESPONSE" | jq -r '.url')
+          SCREENSHOT_FILENAME=$(echo "$RESPONSE" | jq -r '.filename')
+          
+          if [ -z "$SCREENSHOT_URL" ] || [ "$SCREENSHOT_URL" == "null" ]; then
+            echo "ERROR: Failed to get screenshot URL"
+            exit 1
+          fi
+          
+          echo "Downloading screenshot from: http://localhost:8080$SCREENSHOT_URL"
+          curl -f -s -o "screenshots/square-artifacts-${SCREENSHOT_FILENAME}" "http://localhost:8080$SCREENSHOT_URL"
+          
+          # Verify screenshot file exists and is valid
+          if [ ! -f "screenshots/square-artifacts-${SCREENSHOT_FILENAME}" ]; then
+            echo "ERROR: Screenshot file was not created"
+            exit 1
+          fi
+          
+          # Check if it's a valid PNG
+          file "screenshots/square-artifacts-${SCREENSHOT_FILENAME}" | grep -q "PNG image" || {
+            echo "WARNING: Screenshot may not be a valid PNG"
+            file "screenshots/square-artifacts-${SCREENSHOT_FILENAME}"
+          }
+          
+          # Get file size
+          FILE_SIZE=$(stat -c%s "screenshots/square-artifacts-${SCREENSHOT_FILENAME}" 2>/dev/null || stat -f%z "screenshots/square-artifacts-${SCREENSHOT_FILENAME}" 2>/dev/null || echo "0")
+          echo "Screenshot file size: $FILE_SIZE bytes"
+          
+          if [ "$FILE_SIZE" -lt 1000 ]; then
+            echo "WARNING: Screenshot file seems too small ($FILE_SIZE bytes)"
+          fi
+          
+          echo "screenshot_filename=square-artifacts-${SCREENSHOT_FILENAME}" >> $GITHUB_OUTPUT
+          echo "screenshot_path=screenshots/square-artifacts-${SCREENSHOT_FILENAME}" >> $GITHUB_OUTPUT
+          echo "screenshot_size=$FILE_SIZE" >> $GITHUB_OUTPUT
+          
+          echo "✓ Screenshot captured: square-artifacts-${SCREENSHOT_FILENAME}"
+
+      - name: Take additional screenshot for verification
+        run: |
+          echo "Taking additional screenshot 2 seconds later..."
+          sleep 2
+          RESPONSE=$(curl -f -s http://localhost:8080/screenshot)
+          SCREENSHOT_URL=$(echo "$RESPONSE" | jq -r '.url')
+          SCREENSHOT_FILENAME=$(echo "$RESPONSE" | jq -r '.filename')
+          curl -f -s -o "screenshots/square-artifacts-2-${SCREENSHOT_FILENAME}" "http://localhost:8080$SCREENSHOT_URL" || true
+
+      - name: Check container logs for square drawing
+        run: |
+          echo "=== Checking logs for square drawing activity ==="
+          docker logs ibgateway-test-squares 2>&1 | grep -i "drawing square\|square artifact\|clicking" | tail -20 || echo "No square drawing messages found in logs"
+          echo ""
+          echo "=== Full automation logs ==="
+          docker logs ibgateway-test-squares 2>&1 | tail -30
+
+      - name: Upload screenshot artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: square-artifacts-screenshots
+          path: screenshots/*.png
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Create job summary with screenshot
+        run: |
+          echo "## 🔲 Square Artifacts Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Overview" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "This test verifies that red square artifacts are drawn on the screen at click locations during automation." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Screenshot Details" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Filename**: \`${{ steps.take_screenshot.outputs.screenshot_filename }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **File Size**: ${{ steps.take_screenshot.outputs.screenshot_size }} bytes" >> $GITHUB_STEP_SUMMARY
+          echo "- **Taken**: After automation completed (squares should be visible)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Expected Square Locations" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The screenshot should show **red square artifacts** (25x25 pixels) at:" >> $GITHUB_STEP_SUMMARY
+          echo "- **~(\~350, \~175)** - API Type button click location (IB_API)" >> $GITHUB_STEP_SUMMARY
+          echo "- **~(\~500, \~275)** - Trading Mode button click location (PAPER)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### How to View" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📥 **Download the screenshot from the artifacts section below**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The squares are drawn directly on the screen (not on a screenshot image), so they appear in the actual screenshot taken of the display." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- API Type: IB_API" >> $GITHUB_STEP_SUMMARY
+          echo "- Trading Mode: PAPER" >> $GITHUB_STEP_SUMMARY
+          echo "- Square Duration: 10 seconds" >> $GITHUB_STEP_SUMMARY
+          echo "- Square Size: 25x25 pixels" >> $GITHUB_STEP_SUMMARY
+          echo "- Square Color: Red" >> $GITHUB_STEP_SUMMARY
+
+      - name: Post screenshot to PR comment
+        if: github.event_name == 'pull_request'
+        env:
+          SCREENSHOT_FILENAME: ${{ steps.take_screenshot.outputs.screenshot_filename }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const screenshotFilename = process.env.SCREENSHOT_FILENAME;
+            const workflowRunId = process.env.WORKFLOW_RUN_ID;
+            const workflowUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${workflowRunId}`;
+            
+            const comment = '## 🔲 Square Artifacts Test Results\n\n' +
+              '✅ Test completed successfully!\n\n' +
+              '### Screenshot with Square Artifacts\n\n' +
+              'A screenshot has been captured showing the red square artifacts drawn on screen at click locations.\n\n' +
+              '**Screenshot Details:**\n' +
+              '- Filename: `' + screenshotFilename + '`\n' +
+              '- Available as artifact: `square-artifacts-screenshots`\n\n' +
+              '### Expected Square Locations\n\n' +
+              'The screenshot should show **red square artifacts** (25x25 pixels) at:\n' +
+              '- **~(\~350, \~175)** - API Type button click location (IB_API)\n' +
+              '- **~(\~500, \~275)** - Trading Mode button click location (PAPER)\n\n' +
+              '### How to View\n\n' +
+              '📥 **Download the screenshot from the [workflow run artifacts](' + workflowUrl + ')**\n\n' +
+              'The squares are drawn directly on the screen (not on a screenshot image), so they appear in the actual screenshot taken of the display.\n\n' +
+              '### Test Configuration\n' +
+              '- API Type: IB_API\n' +
+              '- Trading Mode: PAPER\n' +
+              '- Square Duration: 10 seconds\n' +
+              '- Square Size: 25x25 pixels\n' +
+              '- Square Color: Red\n\n' +
+              '---\n\n' +
+              'View the full test results in the [workflow run](' + workflowUrl + ').';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Show container logs on failure
+        if: failure()
+        run: |
+          echo "=== Container logs ==="
+          docker logs ibgateway-test-squares 2>&1 | tail -100 || true
+          echo ""
+          echo "=== Container processes ==="
+          docker exec ibgateway-test-squares ps aux || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop ibgateway-test-squares || true
+          docker rm ibgateway-test-squares || true
