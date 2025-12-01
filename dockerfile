@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-numpy \
+    python3-tkinter \
     net-tools \
     curl \
     xdotool \
@@ -53,6 +54,9 @@ RUN chmod +x /screenshot-service.sh
 
 COPY screenshot-server.py /screenshot-server.py
 RUN chmod +x /screenshot-server.py
+
+COPY draw-square-on-screen.py /draw-square-on-screen.py
+RUN chmod +x /draw-square-on-screen.py
 
 EXPOSE 5900 8080
 

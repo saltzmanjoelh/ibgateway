@@ -50,6 +50,45 @@ LIVE_TRADING_BUTTON_Y=275
 PAPER_TRADING_BUTTON_X=500
 PAPER_TRADING_BUTTON_Y=275
 
+# Function to draw a square on the screen at coordinates
+draw_square_at_coordinates() {
+    local x=$1
+    local y=$2
+    local size=${3:-25}
+    local color=${4:-"red"}
+    local duration=${5:-10.0}  # Longer duration so squares persist for screenshots
+    local window_id=$6
+    
+    echo "Drawing square artifact at coordinates ($x, $y)"
+    
+    # Get absolute screen coordinates from window-relative coordinates
+    local abs_x=$x
+    local abs_y=$y
+    
+    if [ -n "$window_id" ]; then
+        # Get window geometry to calculate absolute coordinates
+        # xdotool getwindowgeometry outputs: "Position: 100,200 (screen: 0)"
+        local win_geo=$(xdotool getwindowgeometry "$window_id" 2>/dev/null | grep "Position:" || echo "")
+        if [ -n "$win_geo" ]; then
+            # Extract coordinates from "Position: 100,200 (screen: 0)"
+            local win_pos=$(echo "$win_geo" | sed -n 's/.*Position: \([0-9]*\),\([0-9]*\).*/\1 \2/p')
+            if [ -n "$win_pos" ]; then
+                local win_x=$(echo "$win_pos" | awk '{print $1}')
+                local win_y=$(echo "$win_pos" | awk '{print $2}')
+                abs_x=$((win_x + x))
+                abs_y=$((win_y + y))
+                echo "  Window position: ($win_x, $win_y), Absolute: ($abs_x, $abs_y)"
+            fi
+        fi
+    fi
+    
+    # Draw square on screen using Python script in background so it doesn't block
+    # The square will persist for the duration specified
+    python3 /draw-square-on-screen.py "$abs_x" "$abs_y" "$size" "$color" "$duration" "$DISPLAY" &
+    local draw_pid=$!
+    echo "  Square drawing process started (PID: $draw_pid)"
+}
+
 # Function to safely click at coordinates
 click_at_coordinates() {
     local content_window=$1
@@ -58,6 +97,13 @@ click_at_coordinates() {
     local button_name=$4
     
     echo "Clicking $button_name at coordinates ($x, $y)"
+    
+    # Draw square artifact BEFORE clicking (so it's visible in screenshots)
+    # Squares will persist for 10 seconds to allow screenshots
+    draw_square_at_coordinates "$x" "$y" 25 "red" 10.0 "$content_window"
+    
+    # Small delay to ensure square starts drawing
+    sleep 0.3
     
     # Move mouse to the button location
     xdotool mousemove --window "$content_window" "$x" "$y"
@@ -151,10 +197,18 @@ main() {
     # Click Trading Mode button
     click_trading_mode_button "$CONTENT_WINDOW"
     
+    # Wait a moment for squares to be visible, then take a final screenshot
+    echo ""
+    echo "Waiting for artifacts to be visible..."
+    sleep 1
+    
     echo ""
     echo "=== Configuration Complete ==="
     echo "API Type: $IB_API_TYPE"
     echo "Trading Mode: $IB_TRADING_MODE"
+    echo ""
+    echo "Note: Square artifacts have been drawn on screen at click locations."
+    echo "Take a screenshot to see the click location markers."
     echo ""
     echo "Note: If buttons were not clicked correctly, you may need to adjust"
     echo "the coordinates in this script based on your actual window layout."
