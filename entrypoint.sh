@@ -63,6 +63,14 @@ python3 /screenshot-server.py &
 sleep 1
 echo "Screenshot service available at: http://localhost:8080/"
 
+# Start socat port forwarding for IB Gateway
+# IB Gateway only accepts connections from 127.0.0.1, so we forward external ports
+echo "=== Starting socat port forwarding ==="
+/start-socat-forwarding.sh &
+SOCAT_PID=$!
+echo "Socat forwarding started (PID: $SOCAT_PID)"
+sleep 2
+
 # Start noVNC proxy with verbose logging
 # websockify listens on 5900 (web access) and proxies to VNC on 5901
 # This runs in FOREGROUND to keep the container alive

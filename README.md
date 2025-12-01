@@ -25,6 +25,8 @@ docker build --platform linux/amd64 -t ibgateway .
 docker run --platform linux/amd64 \
   -p 5900:5900 \
   -p 8080:8080 \
+  -p 4003:4003 \
+  -p 4004:4004 \
   -it --rm ibgateway
 ```
 
@@ -33,8 +35,11 @@ docker run --platform linux/amd64 \
 ```bash
 docker run --platform linux/amd64 \
   -v $(pwd)/automate-ibgateway.sh:/automate-ibgateway.sh \
+  -v $(pwd)/.env:/.env \
   -p 5900:5900 \
   -p 8080:8080 \
+  -p 4003:4003 \
+  -p 4004:4004 \
   -it --rm ibgateway
 ```
 
@@ -42,6 +47,10 @@ docker run --platform linux/amd64 \
 
 - **5900**: noVNC web interface (access at `http://localhost:5900`)
 - **8080**: Screenshot HTTP service (access at `http://localhost:8080`)
+- **4003**: IB Gateway Live Trading Port (forwarded to internal port 4001)
+- **4004**: IB Gateway Paper Trading Port (forwarded to internal port 4002)
+
+**Note**: IB Gateway only accepts connections from `127.0.0.1` (localhost). The container uses `socat` to forward external ports 4003 and 4004 to the internal ports 4001 and 4002 respectively. Ports 4001 and 4002 are internal-only and should not be exposed directly from the container.
 
 ## Screenshot Service
 
@@ -136,33 +145,85 @@ The image includes automation scripts for GUI interactions:
 
 ### IB Gateway Configuration
 
-The `automate-ibgateway.sh` script automatically configures the IB Gateway window when it starts. You can control the configuration using environment variables:
+The `automate-ibgateway.sh` script automatically configures the IB Gateway window when it starts. You can control the configuration using:
 
-#### API Type Configuration
+1. **`.env` file** (recommended for credentials): Create a `.env` file in the same directory as the script
+2. **Environment variables**: Passed via `-e` flags or exported before running
 
+The script will:
+- Automatically type username and password into login fields
+- Configure API type (FIX or IB_API)
+- Configure trading mode (LIVE or PAPER)
+
+#### Configuration Options
+
+**Username and Password**:
+- `IB_USERNAME`: IB Gateway username (optional)
+- `IB_PASSWORD`: IB Gateway password (optional)
+
+**API Type Configuration**:
 - `IB_API_TYPE`: Choose between `FIX` or `IB_API` (default: `IB_API`)
 
-#### Trading Mode Configuration
-
+**Trading Mode Configuration**:
 - `IB_TRADING_MODE`: Choose between `LIVE` or `PAPER` (default: `PAPER`)
 
+#### .env File Format
+
+Create a `.env` file in the script directory with the following format:
+
+```bash
+IB_USERNAME=your_username
+IB_PASSWORD=your_password
+IB_API_TYPE=IB_API
+IB_TRADING_MODE=PAPER
+```
+
+**Note**: Environment variables take precedence over `.env` file values. This allows you to override specific values when needed.
+
 #### Examples
+
+**Using .env file (recommended for credentials)**:
+```bash
+# Create .env file
+cat > .env << EOF
+IB_USERNAME=myusername
+IB_PASSWORD=mypassword
+IB_API_TYPE=IB_API
+IB_TRADING_MODE=PAPER
+EOF
+
+# Run with .env file mounted
+docker run --platform linux/amd64 \
+  -v $(pwd)/.env:/.env \
+  -v $(pwd)/automate-ibgateway.sh:/automate-ibgateway.sh \
+  -p 5900:5900 \
+  -p 8080:8080 \
+  -p 4003:4003 \
+  -p 4004:4004 \
+  -it --rm ibgateway
+```
 
 **Default configuration (IB API + Paper Trading)**:
 ```bash
 docker run --platform linux/amd64 \
   -p 5900:5900 \
   -p 8080:8080 \
+  -p 4003:4003 \
+  -p 4004:4004 \
   -it --rm ibgateway
 ```
 
-**FIX API with Live Trading**:
+**FIX API with Live Trading and credentials**:
 ```bash
 docker run --platform linux/amd64 \
+  -e IB_USERNAME=myusername \
+  -e IB_PASSWORD=mypassword \
   -e IB_API_TYPE=FIX \
   -e IB_TRADING_MODE=LIVE \
   -p 5900:5900 \
   -p 8080:8080 \
+  -p 4003:4003 \
+  -p 4004:4004 \
   -it --rm ibgateway
 ```
 
@@ -173,6 +234,9 @@ docker run --platform linux/amd64 \
   -e IB_TRADING_MODE=PAPER \
   -p 5900:5900 \
   -p 8080:8080 \
+  -p 4003:4003 \
+  -p 4004:4004 \
+  -v $(pwd)/automate-ibgateway.sh:/automate-ibgateway.sh \
   -it --rm ibgateway
 ```
 
@@ -181,8 +245,12 @@ docker run --platform linux/amd64 \
 - `RESOLUTION`: Display resolution (default: `1280x800`)
 - `USER`: User to run as (default: `root`)
 - `SCREENSHOT_PORT`: Port for screenshot HTTP server (default: `8080`)
-- `IB_API_TYPE`: API type - `FIX` or `IB_API` (default: `IB_API`)
-- `IB_TRADING_MODE`: Trading mode - `LIVE` or `PAPER` (default: `PAPER`)
+- `IB_USERNAME`: IB Gateway username (optional, can also be set in `.env` file)
+- `IB_PASSWORD`: IB Gateway password (optional, can also be set in `.env` file)
+- `IB_API_TYPE`: API type - `FIX` or `IB_API` (default: `IB_API`, can also be set in `.env` file)
+- `IB_TRADING_MODE`: Trading mode - `LIVE` or `PAPER` (default: `PAPER`, can also be set in `.env` file)
+
+**Note**: Environment variables take precedence over values in `.env` file. This allows you to override specific values when needed.
 
 ## Testing
 
@@ -193,7 +261,9 @@ The repository includes test scripts to verify automation functionality:
 **Test automation script** (requires running container):
 ```bash
 # Start container first
-docker run -d --name ibgateway-test --platform linux/amd64 -p 5900:5900 -p 8080:8080 ibgateway-test:latest
+docker run -d --name ibgateway-test --platform linux/amd64 \
+  -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 \
+  ibgateway-test:latest
 
 # Run automation tests
 ./test-automation.sh ibgateway-test
