@@ -1,0 +1,57 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Docker Build (linux/amd64)",
+            "type": "shell",
+            "command": "docker build --platform linux/amd64 -t ibgateway .",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Docker Run",
+            "type": "shell",
+            "command": "docker run --platform linux/amd64 -e RESOLUTION=1024x768 -v $(pwd)/automate-ibgateway.sh:/automate-ibgateway.sh -p 5900:5900 -p 8080:8080 -it --rm ibgateway",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Docker Build and Run",
+            "dependsOn": [
+                "Docker Build (linux/amd64)",
+                "Docker Run"
+            ],
+            "dependsOrder": "sequence",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        }
+    ]
+}
+
