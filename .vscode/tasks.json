@@ -1,0 +1,72 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Docker Build (linux/amd64)",
+            "type": "shell",
+            "command": "docker build --platform linux/amd64 -t ibgateway .",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Docker Run",
+            "type": "shell",
+            "command": "docker run --platform linux/amd64 -v $(pwd)/.env:/.env -v $(pwd)/automate-ibgateway.sh:/automate-ibgateway.sh -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 -it --rm ibgateway",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Docker Build and Run",
+            "dependsOn": [
+                "Docker Build (linux/amd64)",
+                "Docker Run"
+            ],
+            "dependsOrder": "sequence",
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Docker Bash",
+            "type": "shell",
+            "command": "docker exec -it $(docker ps -q -f ancestor=ibgateway) bash || docker run --platform linux/amd64 -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 -it --rm ibgateway bash",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "dedicated",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        }
+    ]
+}
+
