@@ -2,6 +2,8 @@
 
 Docker image for running Interactive Brokers Gateway in a headless environment with web-based VNC access (noVNC) and screenshot capabilities.
 
+> **Note**: This PR is created to test the screenshot workflow functionality.
+
 ## Features
 
 - **Headless IB Gateway**: Runs IB Gateway under Xvfb (virtual framebuffer)
