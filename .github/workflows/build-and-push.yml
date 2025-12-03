@@ -123,78 +123,34 @@ jobs:
             sleep 2
           done
 
-      - name: Install jq
+      - name: Install Python dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq
+          sudo apt-get install -y python3-pip
+          pip3 install python-dotenv Pillow
 
-      - name: Test screenshot API endpoints
+      - name: Copy CLI tool to container
+        run: |
+          docker cp ibgateway/ ibgateway-test:/ibgateway/
+          docker cp ibgateway_cli.py ibgateway-test:/ibgateway_cli.py
+          docker exec ibgateway-test chmod +x /ibgateway_cli.py
+
+      - name: Test screenshot service
         id: test_screenshot
         run: |
-          echo "Testing screenshot API endpoints..."
+          python3 ibgateway_cli.py test-screenshot-service --container-name ibgateway-test --port 8080
           
-          # Test root endpoint
-          echo "Testing GET /"
-          curl -f -s http://localhost:8080/ > /dev/null || exit 1
-          echo "✓ Root endpoint works"
-          
-          # Test taking a screenshot
-          echo "Testing GET /screenshot"
-          RESPONSE=$(curl -f -s http://localhost:8080/screenshot)
-          echo "Response: $RESPONSE"
-          echo "$RESPONSE" | jq -e '.success == true' || exit 1
-          SCREENSHOT_URL=$(echo "$RESPONSE" | jq -r '.url')
-          SCREENSHOT_FILENAME=$(echo "$RESPONSE" | jq -r '.filename')
-          echo "✓ Screenshot taken: $SCREENSHOT_FILENAME"
-          
-          # Save screenshot filename for later steps
+          # Extract screenshot filename from container for artifact upload
+          SCREENSHOT_FILENAME=$(docker exec ibgateway-test ls -t /tmp/screenshots/*.png 2>/dev/null | head -1 | xargs basename 2>/dev/null || echo "test-screenshot.png")
           echo "screenshot_filename=$SCREENSHOT_FILENAME" >> $GITHUB_OUTPUT
-          echo "screenshot_url=$SCREENSHOT_URL" >> $GITHUB_OUTPUT
-          
-          # Test viewing the screenshot
-          echo "Testing GET /screenshots/$SCREENSHOT_FILENAME"
-          mkdir -p screenshots
-          curl -f -s -o screenshots/test-screenshot.png "http://localhost:8080$SCREENSHOT_URL" || exit 1
-          file screenshots/test-screenshot.png | grep -q "PNG image" || exit 1
-          echo "✓ Screenshot image is valid PNG"
-          
-          # Test listing screenshots
-          echo "Testing GET /screenshots"
-          SCREENSHOTS=$(curl -f -s http://localhost:8080/screenshots)
-          echo "$SCREENSHOTS" | jq -e '.success == true' || exit 1
-          echo "$SCREENSHOTS" | jq -e '.count > 0' || exit 1
-          echo "✓ Screenshot list works"
-          
-          # Test latest screenshot endpoint
-          echo "Testing GET /screenshot/latest"
-          LATEST=$(curl -f -s http://localhost:8080/screenshot/latest)
-          echo "$LATEST" | jq -e '.success == true' || exit 1
-          echo "$LATEST" | jq -e '.filename != null' || exit 1
-          echo "✓ Latest screenshot endpoint works"
-          
-          echo ""
-          echo "All screenshot API tests passed! ✓"
 
       - name: Upload screenshot artifact
         uses: actions/upload-artifact@v4
         with:
           name: test-screenshot
-          path: screenshots/test-screenshot.png
+          path: screenshots/*.png
           retention-days: 7
-
-      - name: Verify screenshot tools are installed
-        run: |
-          echo "Verifying screenshot tools are installed..."
-          docker exec ibgateway-test which scrot || exit 1
-          docker exec ibgateway-test which import || exit 1
-          echo "✓ Screenshot tools are installed"
-
-      - name: Test screenshot service script directly
-        run: |
-          echo "Testing screenshot-service.sh script..."
-          docker exec ibgateway-test /screenshot-service.sh /tmp/test-direct.png || exit 1
-          docker exec ibgateway-test test -f /tmp/test-direct.png || exit 1
-          echo "✓ Screenshot service script works"
+          if-no-files-found: ignore
 
       - name: Show container logs on failure
         if: failure()
@@ -265,344 +221,38 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq curl
+          sudo apt-get install -y python3-pip
+          pip3 install python-dotenv Pillow
+
+      - name: Copy CLI tool to container
+        run: |
+          docker cp ibgateway/ ibgateway-test-default:/ibgateway/
+          docker cp ibgateway_cli.py ibgateway-test-default:/ibgateway_cli.py
+          docker exec ibgateway-test-default chmod +x /ibgateway_cli.py
+          docker cp ibgateway/ ibgateway-test-fix-live:/ibgateway/
+          docker cp ibgateway_cli.py ibgateway-test-fix-live:/ibgateway_cli.py
+          docker exec ibgateway-test-fix-live chmod +x /ibgateway_cli.py
 
       - name: Test automation - Default (IB_API + PAPER)
         id: test_default
         run: |
-          set -e  # Exit on any error
-          echo "=== Testing Default Configuration (IB_API + PAPER) ==="
-          
-          # Start container with default config
-          echo "Step 1: Starting container..."
-          docker run -d \
-            --name ibgateway-test-default \
-            --platform linux/amd64 \
-            -p 5900:5900 \
-            -p 8080:8080 \
-            ibgateway-test:latest
-          echo "✓ Container started"
-          
-          # Wait for services
-          echo ""
-          echo "Step 2: Waiting for services to start..."
-          sleep 20
-          echo "✓ Initial wait complete"
-          
-          # Check container is running
-          echo ""
-          echo "Step 3: Verifying container is running..."
-          if ! docker ps | grep -q ibgateway-test-default; then
-            echo "ERROR: Container is not running!"
-            docker ps -a | grep ibgateway-test-default || true
-            docker logs ibgateway-test-default 2>&1 | tail -50
-            exit 1
-          fi
-          echo "✓ Container is running"
-          
-          # Wait for screenshot service
-          echo ""
-          echo "Step 4: Waiting for screenshot service..."
-          SCREENSHOT_READY=false
-          for i in {1..30}; do
-            if curl -f -s http://localhost:8080/ > /dev/null 2>&1; then
-              echo "✓ Screenshot service ready (attempt $i)"
-              SCREENSHOT_READY=true
-              break
-            fi
-            if [ $i -eq 30 ]; then
-              echo "ERROR: Screenshot service not available after 30 attempts"
-              echo "Container logs:"
-              docker logs ibgateway-test-default 2>&1 | tail -100
-              echo ""
-              echo "Container processes:"
-              docker exec ibgateway-test-default ps aux || true
-              exit 1
-            fi
-            echo "  Attempt $i/30: Screenshot service not ready yet..."
-            sleep 1
-          done
-          
-          # Wait for IB Gateway window
-          echo ""
-          echo "Step 5: Waiting for IB Gateway window..."
-          echo "Note: Checking if automation script already found the window..."
-          # First check logs to see if automation script found it
-          if docker logs ibgateway-test-default 2>&1 | grep -q "IB Gateway window found"; then
-            WINDOW_ID_FROM_LOG=$(docker logs ibgateway-test-default 2>&1 | grep "IB Gateway window found" | grep -o "Window ID: [0-9]*" | grep -o "[0-9]*" | head -1 || echo "")
-            if [ -n "$WINDOW_ID_FROM_LOG" ]; then
-              echo "✓ Found window ID in logs: $WINDOW_ID_FROM_LOG (automation script found it)"
-              WINDOW_ID="$WINDOW_ID_FROM_LOG"
-            fi
-          fi
-          
-          # Also try to find it ourselves with DISPLAY set
-          WINDOW_ID=""
-          for i in {1..90}; do
-            # Set DISPLAY when running xdotool commands - this is critical!
-            # Try multiple search methods to find IB Gateway window (same as automate-ibgateway.sh)
-            WINDOW_ID=$(docker exec -e DISPLAY=:99 ibgateway-test-default xdotool search --class "install4j-ibgateway-GWClient" 2>/dev/null | head -1 || echo "")
-            if [ -z "$WINDOW_ID" ]; then
-              WINDOW_ID=$(docker exec -e DISPLAY=:99 ibgateway-test-default xdotool search --name "IBKR Gateway" 2>/dev/null | head -1 || echo "")
-            fi
-            if [ -z "$WINDOW_ID" ]; then
-              WINDOW_ID=$(docker exec -e DISPLAY=:99 ibgateway-test-default xdotool search --all --name "IB" 2>/dev/null | head -1 || echo "")
-            fi
-            
-            if [ -n "$WINDOW_ID" ]; then
-              echo "✓ IB Gateway window found! Window ID: $WINDOW_ID (attempt $i)"
-              break
-            fi
-            
-            # Every 10 attempts, check logs for automation completion
-            if [ $((i % 10)) -eq 0 ]; then
-              echo "  Attempt $i/90: Window not found yet..."
-              if docker logs ibgateway-test-default 2>&1 | grep -qi "Configuration Complete"; then
-                echo "  ✓ Automation script completed (window may have closed after automation)"
-                break
-              fi
-            fi
-            
-            if [ $i -eq 90 ]; then
-              echo "ERROR: IB Gateway window not found after 90 attempts"
-              echo "Attempted searches:"
-              echo "  - --class 'install4j-ibgateway-GWClient'"
-              echo "  - --name 'IBKR Gateway'"
-              echo "  - --all --name 'IB'"
-              echo ""
-              echo "Debugging information:"
-              echo "Container logs (checking for automation completion):"
-              docker logs ibgateway-test-default 2>&1 | grep -i "automation\|configuration\|window found\|ib gateway" | tail -20 || echo "  (no relevant log entries)"
-              echo ""
-              echo "Full container logs (last 100 lines):"
-              docker logs ibgateway-test-default 2>&1 | tail -100
-              echo ""
-              echo "Listing all windows (with DISPLAY set):"
-              docker exec -e DISPLAY=:99 ibgateway-test-default xdotool search --desktop 0 "" 2>/dev/null | head -10 || echo "  (xdotool search failed)"
-              echo ""
-              echo "Listing window names:"
-              docker exec -e DISPLAY=:99 ibgateway-test-default xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
-                docker exec -e DISPLAY=:99 ibgateway-test-default xdotool getwindowname "$wid" 2>/dev/null | head -1 || true
-              done | head -10 || echo "  (could not list window names)"
-              echo ""
-              echo "Listing window classes:"
-              docker exec -e DISPLAY=:99 ibgateway-test-default xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
-                docker exec -e DISPLAY=:99 ibgateway-test-default xdotool getwindowclassname "$wid" 2>/dev/null | head -1 || true
-              done | head -10 || echo "  (could not list window classes)"
-              echo ""
-              echo "Container processes:"
-              docker exec ibgateway-test-default ps aux | grep -E "(ibgateway|automate)" || true
-              # Don't exit here - check if automation completed successfully instead
-              break
-            fi
-            sleep 1
-          done
-          
-          # Check if automation script is running
-          echo ""
-          echo "Step 6: Checking automation script status..."
-          AUTOMATE_PID=$(docker exec ibgateway-test-default pgrep -f automate-ibgateway.sh 2>/dev/null || echo "")
-          if [ -n "$AUTOMATE_PID" ]; then
-            echo "✓ Automation script is running (PID: $AUTOMATE_PID)"
-          else
-            echo "WARNING: Automation script process not found"
-            echo "Checking all processes:"
-            docker exec ibgateway-test-default ps aux | head -20 || true
-          fi
-          
-          # Wait for automation to complete
-          echo ""
-          echo "Step 7: Waiting for automation to complete..."
-          sleep 15
-          
-          # Check automation script exit status
-          echo ""
-          echo "Step 8: Checking automation script completion..."
-          AUTOMATE_EXIT_CODE=$(docker exec ibgateway-test-default sh -c 'wait $(pgrep -f automate-ibgateway.sh) 2>/dev/null; echo $?' || echo "unknown")
-          if [ "$AUTOMATE_EXIT_CODE" != "unknown" ] && [ "$AUTOMATE_EXIT_CODE" != "0" ]; then
-            echo "WARNING: Automation script may have exited with code: $AUTOMATE_EXIT_CODE"
-          fi
-          
-          # Take verification screenshot
-          echo ""
-          echo "Step 9: Taking verification screenshot..."
-          mkdir -p screenshots
-          RESPONSE=$(curl -f -s http://localhost:8080/screenshot)
-          SCREENSHOT_URL=$(echo "$RESPONSE" | jq -r '.url')
-          SCREENSHOT_FILENAME=$(echo "$RESPONSE" | jq -r '.filename')
-          curl -f -s -o "screenshots/default-${SCREENSHOT_FILENAME}" "http://localhost:8080$SCREENSHOT_URL"
-          echo "✓ Screenshot saved: screenshots/default-${SCREENSHOT_FILENAME}"
-          
-          echo "screenshot_filename=$SCREENSHOT_FILENAME" >> $GITHUB_OUTPUT
-          
-          # Check logs for automation with detailed output
-          echo ""
-          echo "Step 10: Verifying automation logs..."
-          FULL_LOGS=$(docker logs ibgateway-test-default 2>&1)
-          echo "Full container logs (last 200 lines):"
-          echo "$FULL_LOGS" | tail -200
-          echo ""
-          
-          AUTOMATION_FOUND=false
-          if echo "$FULL_LOGS" | grep -qi "configuration complete"; then
-            echo "✓ Found 'configuration complete' in logs"
-            AUTOMATION_FOUND=true
-          fi
-          if echo "$FULL_LOGS" | grep -qi "api type.*IB_API\|API Type.*IB_API"; then
-            echo "✓ Found 'IB_API' configuration in logs"
-            AUTOMATION_FOUND=true
-          fi
-          if echo "$FULL_LOGS" | grep -qi "trading mode.*PAPER\|Trading Mode.*PAPER"; then
-            echo "✓ Found 'PAPER' trading mode in logs"
-            AUTOMATION_FOUND=true
-          fi
-          
-          # Check for automation script output
-          echo ""
-          echo "Automation-related log entries:"
-          echo "$FULL_LOGS" | grep -i "automation\|configuration\|api\|trading\|click\|button" | tail -20 || echo "  (no automation-related entries found)"
-          
-          if [ "$AUTOMATION_FOUND" = "false" ]; then
-            echo ""
-            echo "ERROR: Automation verification failed - expected log messages not found"
-            echo "Expected to find: 'configuration complete', 'IB_API', or 'PAPER' in logs"
-            echo ""
-            echo "Searching for automation script execution:"
-            AUTOMATION_EXECUTION=$(echo "$FULL_LOGS" | grep -i "automate-ibgateway\|waiting for ib gateway\|ib gateway window found\|clicked\|configuration complete" || echo "")
-            if [ -n "$AUTOMATION_EXECUTION" ]; then
-              echo "Found automation script activity:"
-              echo "$AUTOMATION_EXECUTION" | tail -10
-            else
-              echo "  (automation script execution not found in logs)"
-            fi
-            exit 1
-          fi
-          
-          echo ""
-          echo "=== Test Summary ==="
-          echo "Window detection: $([ -n "$WINDOW_ID" ] && echo "✓ Found (ID: $WINDOW_ID)" || echo "⚠ Not found (but automation may have completed)")"
-          echo "Automation completion: $([ "$AUTOMATION_FOUND" = "true" ] && echo "✓ Verified" || echo "✗ Failed")"
-          echo ""
-          echo "✓ All automation verification checks passed!"
-          
-          docker stop ibgateway-test-default || true
-          docker rm ibgateway-test-default || true
+          python3 ibgateway_cli.py test-automation \
+            --container-name ibgateway-test-default \
+            --api-type IB_API \
+            --trading-mode PAPER \
+            --ci
 
       - name: Test automation - FIX + LIVE
         id: test_fix_live
         run: |
-          echo "=== Testing FIX + LIVE Configuration ==="
-          
-          # Start container with FIX + LIVE config
-          docker run -d \
-            --name ibgateway-test-fix-live \
-            --platform linux/amd64 \
-            -p 5900:5900 \
-            -p 8080:8080 \
-            -e IB_API_TYPE=FIX \
-            -e IB_TRADING_MODE=LIVE \
-            ibgateway-test:latest
-          
-          # Wait for services
-          echo "Waiting for services to start..."
-          sleep 20
-          
-          # Wait for screenshot service
-          for i in {1..30}; do
-            if curl -f -s http://localhost:8080/ > /dev/null 2>&1; then
-              echo "✓ Screenshot service ready"
-              break
-            fi
-            if [ $i -eq 30 ]; then
-              echo "ERROR: Screenshot service not available"
-              docker logs ibgateway-test-fix-live
-              exit 1
-            fi
-            sleep 1
-          done
-          
-          # Wait for IB Gateway window
-          echo "Waiting for IB Gateway window..."
-          WINDOW_ID=""
-          for i in {1..90}; do
-            # Set DISPLAY when running xdotool commands - this is critical!
-            # Try multiple search methods to find IB Gateway window (same as automate-ibgateway.sh)
-            WINDOW_ID=$(docker exec -e DISPLAY=:99 ibgateway-test-fix-live xdotool search --class "install4j-ibgateway-GWClient" 2>/dev/null | head -1 || echo "")
-            if [ -z "$WINDOW_ID" ]; then
-              WINDOW_ID=$(docker exec -e DISPLAY=:99 ibgateway-test-fix-live xdotool search --name "IBKR Gateway" 2>/dev/null | head -1 || echo "")
-            fi
-            if [ -z "$WINDOW_ID" ]; then
-              WINDOW_ID=$(docker exec -e DISPLAY=:99 ibgateway-test-fix-live xdotool search --all --name "IB" 2>/dev/null | head -1 || echo "")
-            fi
-            
-            if [ -n "$WINDOW_ID" ]; then
-              echo "✓ IB Gateway window found! Window ID: $WINDOW_ID"
-              break
-            fi
-            # Every 10 attempts, check logs for automation completion
-            if [ $((i % 10)) -eq 0 ]; then
-              echo "  Attempt $i/90: Window not found yet..."
-              if docker logs ibgateway-test-fix-live 2>&1 | grep -qi "Configuration Complete"; then
-                echo "  ✓ Automation script completed (window may have closed after automation)"
-                break
-              fi
-            fi
-            
-            if [ $i -eq 90 ]; then
-              echo "ERROR: IB Gateway window not found after 90 attempts"
-              echo "Attempted searches:"
-              echo "  - --class 'install4j-ibgateway-GWClient'"
-              echo "  - --name 'IBKR Gateway'"
-              echo "  - --all --name 'IB'"
-              echo ""
-              echo "Debugging information:"
-              echo "Container logs (checking for automation completion):"
-              docker logs ibgateway-test-fix-live 2>&1 | grep -i "automation\|configuration\|window found\|ib gateway" | tail -20 || echo "  (no relevant log entries)"
-              echo ""
-              echo "Full container logs (last 100 lines):"
-              docker logs ibgateway-test-fix-live 2>&1 | tail -100
-              echo ""
-              echo "Listing all windows (with DISPLAY set):"
-              docker exec -e DISPLAY=:99 ibgateway-test-fix-live xdotool search --desktop 0 "" 2>/dev/null | head -10 || echo "  (xdotool search failed)"
-              echo ""
-              echo "Listing window names:"
-              docker exec -e DISPLAY=:99 ibgateway-test-fix-live xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
-                docker exec -e DISPLAY=:99 ibgateway-test-fix-live xdotool getwindowname "$wid" 2>/dev/null | head -1 || true
-              done | head -10 || echo "  (could not list window names)"
-              echo ""
-              echo "Listing window classes:"
-              docker exec -e DISPLAY=:99 ibgateway-test-fix-live xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
-                docker exec -e DISPLAY=:99 ibgateway-test-fix-live xdotool getwindowclassname "$wid" 2>/dev/null | head -1 || true
-              done | head -10 || echo "  (could not list window classes)"
-              # Don't exit here - check if automation completed successfully instead
-              break
-            fi
-            sleep 1
-          done
-          
-          # Wait for automation to complete
-          echo "Waiting for automation to complete..."
-          sleep 15
-          
-          # Take verification screenshot
-          RESPONSE=$(curl -f -s http://localhost:8080/screenshot)
-          SCREENSHOT_URL=$(echo "$RESPONSE" | jq -r '.url')
-          SCREENSHOT_FILENAME=$(echo "$RESPONSE" | jq -r '.filename')
-          curl -f -s -o "screenshots/fix-live-${SCREENSHOT_FILENAME}" "http://localhost:8080$SCREENSHOT_URL"
-          
-          # Check logs for automation
-          if docker logs ibgateway-test-fix-live 2>&1 | grep -qi "configuration complete\|api type.*FIX\|trading mode.*LIVE"; then
-            echo "✓ Automation logs verified"
-          else
-            echo "WARNING: Automation logs not clearly visible"
-            docker logs ibgateway-test-fix-live | grep -i "automation\|configuration\|api\|trading" | tail -10 || true
-          fi
-          
-          docker stop ibgateway-test-fix-live || true
-          docker rm ibgateway-test-fix-live || true
+          python3 ibgateway_cli.py test-automation \
+            --container-name ibgateway-test-fix-live \
+            --api-type FIX \
+            --trading-mode LIVE \
+            --ci
 
       - name: Upload automation test screenshots
         if: always()
