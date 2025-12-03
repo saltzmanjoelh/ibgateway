@@ -182,30 +182,6 @@ jobs:
           path: screenshots/test-screenshot.png
           retention-days: 7
 
-      - name: Create job summary with screenshot info
-        run: |
-          echo "## 📸 Screenshot Service Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ All screenshot API tests passed!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Test Screenshot" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Screenshot taken during test: \`${{ steps.test_screenshot.outputs.screenshot_filename }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📥 **Download the screenshot from the artifacts section below**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Tested Endpoints" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ GET / - Root endpoint" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ GET /screenshot - Take screenshot" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ GET /screenshot/latest - Get latest screenshot" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ GET /screenshots - List all screenshots" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ GET /screenshots/\<filename\> - View screenshot image" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Screenshot Tools Verified" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ scrot installed" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ imagemagick installed" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Direct script execution works" >> $GITHUB_STEP_SUMMARY
-
       - name: Verify screenshot tools are installed
         run: |
           echo "Verifying screenshot tools are installed..."
@@ -244,24 +220,11 @@ jobs:
             // Create a comment with test results and link to artifacts
             const comment = '## 📸 Screenshot Service Test Results\n\n' +
               '✅ All screenshot API tests passed!\n\n' +
-              '### Test Results\n\n' +
               '**Screenshot Details:**\n' +
               '- Filename: `' + screenshotFilename + '`\n' +
               '- Taken during automated test run\n' +
               '- Available as artifact: `test-screenshot`\n\n' +
-              '### Tested Endpoints\n' +
-              '- ✅ GET / - Root endpoint\n' +
-              '- ✅ GET /screenshot - Take screenshot\n' +
-              '- ✅ GET /screenshot/latest - Get latest screenshot\n' +
-              '- ✅ GET /screenshots - List all screenshots\n' +
-              '- ✅ GET /screenshots/<filename> - View screenshot image\n\n' +
-              '### Screenshot Tools Verified\n' +
-              '- ✅ scrot installed\n' +
-              '- ✅ imagemagick installed\n' +
-              '- ✅ Direct script execution works\n\n' +
-              '### View Screenshot\n\n' +
-              '📥 Download the test screenshot from the [workflow run artifacts](' + workflowUrl + ') or check the job summary above.\n\n' +
-              'The screenshot service is working correctly! 🎉';
+              '📥 [Download workflow run artifacts](' + workflowUrl + ')';
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -649,34 +612,6 @@ jobs:
           path: screenshots/*.png
           retention-days: 7
           if-no-files-found: ignore
-
-      - name: Create automation test summary
-        if: always()
-        run: |
-          echo "## 🤖 Automation Test Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if [ "${{ steps.test_default.outcome }}" == "success" ]; then
-            echo "✅ **Default Configuration (IB_API + PAPER)**: Passed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Default Configuration (IB_API + PAPER)**: Failed" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          if [ "${{ steps.test_fix_live.outcome }}" == "success" ]; then
-            echo "✅ **FIX + LIVE Configuration**: Passed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **FIX + LIVE Configuration**: Failed" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Screenshots" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Screenshots from automation tests are available in the artifacts section below." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Test Details" >> $GITHUB_STEP_SUMMARY
-          echo "- Tests verify that the automation script correctly configures IB Gateway window" >> $GITHUB_STEP_SUMMARY
-          echo "- Screenshots are taken after automation completes" >> $GITHUB_STEP_SUMMARY
-          echo "- Logs are checked for automation completion messages" >> $GITHUB_STEP_SUMMARY
 
       - name: Show container logs on failure
         if: failure()
