@@ -97,13 +97,39 @@ test_configuration() {
     
     # Wait for IB Gateway window
     echo "Waiting for IB Gateway window..."
+    local window_id=""
     for i in {1..60}; do
-        if docker exec "$CONTAINER_NAME" xdotool search --name "IBKR Gateway" 2>/dev/null | grep -q .; then
-            echo "✓ IB Gateway window found"
+        # Try multiple search methods to find IB Gateway window (same as automate-ibgateway.sh)
+        window_id=$(docker exec "$CONTAINER_NAME" xdotool search --class "install4j-ibgateway-GWClient" 2>/dev/null | head -1 || echo "")
+        if [ -z "$window_id" ]; then
+            window_id=$(docker exec "$CONTAINER_NAME" xdotool search --name "IBKR Gateway" 2>/dev/null | head -1 || echo "")
+        fi
+        if [ -z "$window_id" ]; then
+            window_id=$(docker exec "$CONTAINER_NAME" xdotool search --all --name "IB" 2>/dev/null | head -1 || echo "")
+        fi
+        
+        if [ -n "$window_id" ]; then
+            echo "✓ IB Gateway window found! Window ID: $window_id"
             break
         fi
         if [ $i -eq 60 ]; then
             echo "ERROR: IB Gateway window not found"
+            echo "Attempted searches:"
+            echo "  - --class 'install4j-ibgateway-GWClient'"
+            echo "  - --name 'IBKR Gateway'"
+            echo "  - --all --name 'IB'"
+            echo ""
+            echo "Debugging information:"
+            echo "Listing all windows:"
+            docker exec "$CONTAINER_NAME" xdotool search --desktop 0 "" 2>/dev/null | head -10 || echo "  (xdotool search failed)"
+            echo "Listing window names:"
+            docker exec "$CONTAINER_NAME" xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
+                docker exec "$CONTAINER_NAME" xdotool getwindowname "$wid" 2>/dev/null | head -1 || true
+            done | head -10 || echo "  (could not list window names)"
+            echo "Listing window classes:"
+            docker exec "$CONTAINER_NAME" xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
+                docker exec "$CONTAINER_NAME" xdotool getwindowclassname "$wid" 2>/dev/null | head -1 || true
+            done | head -10 || echo "  (could not list window classes)"
             docker logs "$CONTAINER_NAME" | tail -50
             return 1
         fi
