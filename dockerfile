@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y \
     wmctrl \
     scrot \
     imagemagick \
+    socat \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
@@ -54,7 +55,10 @@ RUN chmod +x /screenshot-service.sh
 COPY screenshot-server.py /screenshot-server.py
 RUN chmod +x /screenshot-server.py
 
-EXPOSE 5900 8080
+COPY start-socat-forwarding.sh /start-socat-forwarding.sh
+RUN chmod +x /start-socat-forwarding.sh
+
+EXPOSE 5900 8080 4003 4004
 
 CMD ["/entrypoint.sh"]
 

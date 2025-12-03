@@ -50,11 +50,26 @@ echo "DISPLAY=$DISPLAY"
 
 /opt/ibgateway/ibgateway &
 
+# Wait for IB Gateway window to appear, then automate configuration
+echo "=== Waiting for IB Gateway to start, then automating configuration ==="
+sleep 5
+/automate-ibgateway.sh &
+AUTOMATE_PID=$!
+echo "Automation script started (PID: $AUTOMATE_PID)"
+
 # Start screenshot HTTP server on port 8080
 echo "=== Starting screenshot HTTP server on port 8080 ==="
 python3 /screenshot-server.py &
 sleep 1
 echo "Screenshot service available at: http://localhost:8080/"
+
+# Start socat port forwarding for IB Gateway
+# IB Gateway only accepts connections from 127.0.0.1, so we forward external ports
+echo "=== Starting socat port forwarding ==="
+/start-socat-forwarding.sh &
+SOCAT_PID=$!
+echo "Socat forwarding started (PID: $SOCAT_PID)"
+sleep 2
 
 # Start noVNC proxy with verbose logging
 # websockify listens on 5900 (web access) and proxies to VNC on 5901
