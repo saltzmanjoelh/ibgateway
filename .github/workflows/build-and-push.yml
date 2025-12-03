@@ -340,13 +340,39 @@ jobs:
           
           # Wait for IB Gateway window
           echo "Waiting for IB Gateway window..."
+          WINDOW_ID=""
           for i in {1..60}; do
-            if docker exec ibgateway-test-default xdotool search --name "IBKR Gateway" 2>/dev/null | grep -q .; then
-              echo "✓ IB Gateway window found"
+            # Try multiple search methods to find IB Gateway window (same as automate-ibgateway.sh)
+            WINDOW_ID=$(docker exec ibgateway-test-default xdotool search --class "install4j-ibgateway-GWClient" 2>/dev/null | head -1 || echo "")
+            if [ -z "$WINDOW_ID" ]; then
+              WINDOW_ID=$(docker exec ibgateway-test-default xdotool search --name "IBKR Gateway" 2>/dev/null | head -1 || echo "")
+            fi
+            if [ -z "$WINDOW_ID" ]; then
+              WINDOW_ID=$(docker exec ibgateway-test-default xdotool search --all --name "IB" 2>/dev/null | head -1 || echo "")
+            fi
+            
+            if [ -n "$WINDOW_ID" ]; then
+              echo "✓ IB Gateway window found! Window ID: $WINDOW_ID"
               break
             fi
             if [ $i -eq 60 ]; then
               echo "ERROR: IB Gateway window not found"
+              echo "Attempted searches:"
+              echo "  - --class 'install4j-ibgateway-GWClient'"
+              echo "  - --name 'IBKR Gateway'"
+              echo "  - --all --name 'IB'"
+              echo ""
+              echo "Debugging information:"
+              echo "Listing all windows:"
+              docker exec ibgateway-test-default xdotool search --desktop 0 "" 2>/dev/null | head -10 || echo "  (xdotool search failed)"
+              echo "Listing window names:"
+              docker exec ibgateway-test-default xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
+                docker exec ibgateway-test-default xdotool getwindowname "$wid" 2>/dev/null | head -1 || true
+              done | head -10 || echo "  (could not list window names)"
+              echo "Listing window classes:"
+              docker exec ibgateway-test-default xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
+                docker exec ibgateway-test-default xdotool getwindowclassname "$wid" 2>/dev/null | head -1 || true
+              done | head -10 || echo "  (could not list window classes)"
               docker logs ibgateway-test-default | tail -50
               exit 1
             fi
@@ -412,13 +438,39 @@ jobs:
           
           # Wait for IB Gateway window
           echo "Waiting for IB Gateway window..."
+          WINDOW_ID=""
           for i in {1..60}; do
-            if docker exec ibgateway-test-fix-live xdotool search --name "IBKR Gateway" 2>/dev/null | grep -q .; then
-              echo "✓ IB Gateway window found"
+            # Try multiple search methods to find IB Gateway window (same as automate-ibgateway.sh)
+            WINDOW_ID=$(docker exec ibgateway-test-fix-live xdotool search --class "install4j-ibgateway-GWClient" 2>/dev/null | head -1 || echo "")
+            if [ -z "$WINDOW_ID" ]; then
+              WINDOW_ID=$(docker exec ibgateway-test-fix-live xdotool search --name "IBKR Gateway" 2>/dev/null | head -1 || echo "")
+            fi
+            if [ -z "$WINDOW_ID" ]; then
+              WINDOW_ID=$(docker exec ibgateway-test-fix-live xdotool search --all --name "IB" 2>/dev/null | head -1 || echo "")
+            fi
+            
+            if [ -n "$WINDOW_ID" ]; then
+              echo "✓ IB Gateway window found! Window ID: $WINDOW_ID"
               break
             fi
             if [ $i -eq 60 ]; then
               echo "ERROR: IB Gateway window not found"
+              echo "Attempted searches:"
+              echo "  - --class 'install4j-ibgateway-GWClient'"
+              echo "  - --name 'IBKR Gateway'"
+              echo "  - --all --name 'IB'"
+              echo ""
+              echo "Debugging information:"
+              echo "Listing all windows:"
+              docker exec ibgateway-test-fix-live xdotool search --desktop 0 "" 2>/dev/null | head -10 || echo "  (xdotool search failed)"
+              echo "Listing window names:"
+              docker exec ibgateway-test-fix-live xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
+                docker exec ibgateway-test-fix-live xdotool getwindowname "$wid" 2>/dev/null | head -1 || true
+              done | head -10 || echo "  (could not list window names)"
+              echo "Listing window classes:"
+              docker exec ibgateway-test-fix-live xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
+                docker exec ibgateway-test-fix-live xdotool getwindowclassname "$wid" 2>/dev/null | head -1 || true
+              done | head -10 || echo "  (could not list window classes)"
               docker logs ibgateway-test-fix-live | tail -50
               exit 1
             fi
