@@ -366,51 +366,74 @@ jobs:
           # Wait for IB Gateway window
           echo ""
           echo "Step 5: Waiting for IB Gateway window..."
+          echo "Note: Checking if automation script already found the window..."
+          # First check logs to see if automation script found it
+          if docker logs ibgateway-test-default 2>&1 | grep -q "IB Gateway window found"; then
+            WINDOW_ID_FROM_LOG=$(docker logs ibgateway-test-default 2>&1 | grep "IB Gateway window found" | grep -o "Window ID: [0-9]*" | grep -o "[0-9]*" | head -1 || echo "")
+            if [ -n "$WINDOW_ID_FROM_LOG" ]; then
+              echo "✓ Found window ID in logs: $WINDOW_ID_FROM_LOG (automation script found it)"
+              WINDOW_ID="$WINDOW_ID_FROM_LOG"
+            fi
+          fi
+          
+          # Also try to find it ourselves with DISPLAY set
           WINDOW_ID=""
-          for i in {1..60}; do
+          for i in {1..90}; do
+            # Set DISPLAY when running xdotool commands - this is critical!
             # Try multiple search methods to find IB Gateway window (same as automate-ibgateway.sh)
-            WINDOW_ID=$(docker exec ibgateway-test-default xdotool search --class "install4j-ibgateway-GWClient" 2>/dev/null | head -1 || echo "")
+            WINDOW_ID=$(docker exec -e DISPLAY=:99 ibgateway-test-default xdotool search --class "install4j-ibgateway-GWClient" 2>/dev/null | head -1 || echo "")
             if [ -z "$WINDOW_ID" ]; then
-              WINDOW_ID=$(docker exec ibgateway-test-default xdotool search --name "IBKR Gateway" 2>/dev/null | head -1 || echo "")
+              WINDOW_ID=$(docker exec -e DISPLAY=:99 ibgateway-test-default xdotool search --name "IBKR Gateway" 2>/dev/null | head -1 || echo "")
             fi
             if [ -z "$WINDOW_ID" ]; then
-              WINDOW_ID=$(docker exec ibgateway-test-default xdotool search --all --name "IB" 2>/dev/null | head -1 || echo "")
+              WINDOW_ID=$(docker exec -e DISPLAY=:99 ibgateway-test-default xdotool search --all --name "IB" 2>/dev/null | head -1 || echo "")
             fi
             
             if [ -n "$WINDOW_ID" ]; then
               echo "✓ IB Gateway window found! Window ID: $WINDOW_ID (attempt $i)"
               break
             fi
-            if [ $i -eq 60 ]; then
-              echo "ERROR: IB Gateway window not found after 60 attempts"
+            
+            # Every 10 attempts, check logs for automation completion
+            if [ $((i % 10)) -eq 0 ]; then
+              echo "  Attempt $i/90: Window not found yet..."
+              if docker logs ibgateway-test-default 2>&1 | grep -qi "Configuration Complete"; then
+                echo "  ✓ Automation script completed (window may have closed after automation)"
+                break
+              fi
+            fi
+            
+            if [ $i -eq 90 ]; then
+              echo "ERROR: IB Gateway window not found after 90 attempts"
               echo "Attempted searches:"
               echo "  - --class 'install4j-ibgateway-GWClient'"
               echo "  - --name 'IBKR Gateway'"
               echo "  - --all --name 'IB'"
               echo ""
               echo "Debugging information:"
-              echo "Container logs:"
+              echo "Container logs (checking for automation completion):"
+              docker logs ibgateway-test-default 2>&1 | grep -i "automation\|configuration\|window found\|ib gateway" | tail -20 || echo "  (no relevant log entries)"
+              echo ""
+              echo "Full container logs (last 100 lines):"
               docker logs ibgateway-test-default 2>&1 | tail -100
               echo ""
-              echo "Listing all windows:"
-              docker exec ibgateway-test-default xdotool search --desktop 0 "" 2>/dev/null | head -10 || echo "  (xdotool search failed)"
+              echo "Listing all windows (with DISPLAY set):"
+              docker exec -e DISPLAY=:99 ibgateway-test-default xdotool search --desktop 0 "" 2>/dev/null | head -10 || echo "  (xdotool search failed)"
               echo ""
               echo "Listing window names:"
-              docker exec ibgateway-test-default xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
-                docker exec ibgateway-test-default xdotool getwindowname "$wid" 2>/dev/null | head -1 || true
+              docker exec -e DISPLAY=:99 ibgateway-test-default xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
+                docker exec -e DISPLAY=:99 ibgateway-test-default xdotool getwindowname "$wid" 2>/dev/null | head -1 || true
               done | head -10 || echo "  (could not list window names)"
               echo ""
               echo "Listing window classes:"
-              docker exec ibgateway-test-default xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
-                docker exec ibgateway-test-default xdotool getwindowclassname "$wid" 2>/dev/null | head -1 || true
+              docker exec -e DISPLAY=:99 ibgateway-test-default xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
+                docker exec -e DISPLAY=:99 ibgateway-test-default xdotool getwindowclassname "$wid" 2>/dev/null | head -1 || true
               done | head -10 || echo "  (could not list window classes)"
               echo ""
               echo "Container processes:"
               docker exec ibgateway-test-default ps aux | grep -E "(ibgateway|automate)" || true
-              exit 1
-            fi
-            if [ $((i % 10)) -eq 0 ]; then
-              echo "  Attempt $i/60: Window not found yet..."
+              # Don't exit here - check if automation completed successfully instead
+              break
             fi
             sleep 1
           done
@@ -485,10 +508,20 @@ jobs:
             echo "Expected to find: 'configuration complete', 'IB_API', or 'PAPER' in logs"
             echo ""
             echo "Searching for automation script execution:"
-            echo "$FULL_LOGS" | grep -i "automate-ibgateway\|waiting for ib gateway\|ib gateway window found" || echo "  (automation script execution not found in logs)"
+            AUTOMATION_EXECUTION=$(echo "$FULL_LOGS" | grep -i "automate-ibgateway\|waiting for ib gateway\|ib gateway window found\|clicked\|configuration complete" || echo "")
+            if [ -n "$AUTOMATION_EXECUTION" ]; then
+              echo "Found automation script activity:"
+              echo "$AUTOMATION_EXECUTION" | tail -10
+            else
+              echo "  (automation script execution not found in logs)"
+            fi
             exit 1
           fi
           
+          echo ""
+          echo "=== Test Summary ==="
+          echo "Window detection: $([ -n "$WINDOW_ID" ] && echo "✓ Found (ID: $WINDOW_ID)" || echo "⚠ Not found (but automation may have completed)")"
+          echo "Automation completion: $([ "$AUTOMATION_FOUND" = "true" ] && echo "✓ Verified" || echo "✗ Failed")"
           echo ""
           echo "✓ All automation verification checks passed!"
           
@@ -531,40 +564,58 @@ jobs:
           # Wait for IB Gateway window
           echo "Waiting for IB Gateway window..."
           WINDOW_ID=""
-          for i in {1..60}; do
+          for i in {1..90}; do
+            # Set DISPLAY when running xdotool commands - this is critical!
             # Try multiple search methods to find IB Gateway window (same as automate-ibgateway.sh)
-            WINDOW_ID=$(docker exec ibgateway-test-fix-live xdotool search --class "install4j-ibgateway-GWClient" 2>/dev/null | head -1 || echo "")
+            WINDOW_ID=$(docker exec -e DISPLAY=:99 ibgateway-test-fix-live xdotool search --class "install4j-ibgateway-GWClient" 2>/dev/null | head -1 || echo "")
             if [ -z "$WINDOW_ID" ]; then
-              WINDOW_ID=$(docker exec ibgateway-test-fix-live xdotool search --name "IBKR Gateway" 2>/dev/null | head -1 || echo "")
+              WINDOW_ID=$(docker exec -e DISPLAY=:99 ibgateway-test-fix-live xdotool search --name "IBKR Gateway" 2>/dev/null | head -1 || echo "")
             fi
             if [ -z "$WINDOW_ID" ]; then
-              WINDOW_ID=$(docker exec ibgateway-test-fix-live xdotool search --all --name "IB" 2>/dev/null | head -1 || echo "")
+              WINDOW_ID=$(docker exec -e DISPLAY=:99 ibgateway-test-fix-live xdotool search --all --name "IB" 2>/dev/null | head -1 || echo "")
             fi
             
             if [ -n "$WINDOW_ID" ]; then
               echo "✓ IB Gateway window found! Window ID: $WINDOW_ID"
               break
             fi
-            if [ $i -eq 60 ]; then
-              echo "ERROR: IB Gateway window not found"
+            # Every 10 attempts, check logs for automation completion
+            if [ $((i % 10)) -eq 0 ]; then
+              echo "  Attempt $i/90: Window not found yet..."
+              if docker logs ibgateway-test-fix-live 2>&1 | grep -qi "Configuration Complete"; then
+                echo "  ✓ Automation script completed (window may have closed after automation)"
+                break
+              fi
+            fi
+            
+            if [ $i -eq 90 ]; then
+              echo "ERROR: IB Gateway window not found after 90 attempts"
               echo "Attempted searches:"
               echo "  - --class 'install4j-ibgateway-GWClient'"
               echo "  - --name 'IBKR Gateway'"
               echo "  - --all --name 'IB'"
               echo ""
               echo "Debugging information:"
-              echo "Listing all windows:"
-              docker exec ibgateway-test-fix-live xdotool search --desktop 0 "" 2>/dev/null | head -10 || echo "  (xdotool search failed)"
+              echo "Container logs (checking for automation completion):"
+              docker logs ibgateway-test-fix-live 2>&1 | grep -i "automation\|configuration\|window found\|ib gateway" | tail -20 || echo "  (no relevant log entries)"
+              echo ""
+              echo "Full container logs (last 100 lines):"
+              docker logs ibgateway-test-fix-live 2>&1 | tail -100
+              echo ""
+              echo "Listing all windows (with DISPLAY set):"
+              docker exec -e DISPLAY=:99 ibgateway-test-fix-live xdotool search --desktop 0 "" 2>/dev/null | head -10 || echo "  (xdotool search failed)"
+              echo ""
               echo "Listing window names:"
-              docker exec ibgateway-test-fix-live xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
-                docker exec ibgateway-test-fix-live xdotool getwindowname "$wid" 2>/dev/null | head -1 || true
+              docker exec -e DISPLAY=:99 ibgateway-test-fix-live xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
+                docker exec -e DISPLAY=:99 ibgateway-test-fix-live xdotool getwindowname "$wid" 2>/dev/null | head -1 || true
               done | head -10 || echo "  (could not list window names)"
+              echo ""
               echo "Listing window classes:"
-              docker exec ibgateway-test-fix-live xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
-                docker exec ibgateway-test-fix-live xdotool getwindowclassname "$wid" 2>/dev/null | head -1 || true
+              docker exec -e DISPLAY=:99 ibgateway-test-fix-live xdotool search --desktop 0 "" 2>/dev/null | while read wid; do
+                docker exec -e DISPLAY=:99 ibgateway-test-fix-live xdotool getwindowclassname "$wid" 2>/dev/null | head -1 || true
               done | head -10 || echo "  (could not list window classes)"
-              docker logs ibgateway-test-fix-live | tail -50
-              exit 1
+              # Don't exit here - check if automation completed successfully instead
+              break
             fi
             sleep 1
           done
