@@ -227,15 +227,6 @@ jobs:
           sudo apt-get install -y python3-pip
           pip3 install python-dotenv Pillow
 
-      - name: Copy CLI tool to container
-        run: |
-          docker cp ibgateway/ ibgateway-test-default:/ibgateway/
-          docker cp ibgateway_cli.py ibgateway-test-default:/ibgateway_cli.py
-          docker exec ibgateway-test-default chmod +x /ibgateway_cli.py
-          docker cp ibgateway/ ibgateway-test-fix-live:/ibgateway/
-          docker cp ibgateway_cli.py ibgateway-test-fix-live:/ibgateway_cli.py
-          docker exec ibgateway-test-fix-live chmod +x /ibgateway_cli.py
-
       - name: Test automation - Default (IB_API + PAPER)
         id: test_default
         run: |
@@ -268,11 +259,11 @@ jobs:
         run: |
           echo "=== Container logs (if any containers exist) ==="
           docker ps -a || true
-          docker logs ibgateway-test-default 2>&1 | tail -50 || true
-          docker logs ibgateway-test-fix-live 2>&1 | tail -50 || true
+          docker logs ibgateway-test-default-ib-api-paper 2>&1 | tail -50 || true
+          docker logs ibgateway-test-fix-live-fix-live 2>&1 | tail -50 || true
 
       - name: Cleanup
         if: always()
         run: |
-          docker stop ibgateway-test-default ibgateway-test-fix-live 2>/dev/null || true
-          docker rm ibgateway-test-default ibgateway-test-fix-live 2>/dev/null || true
+          docker stop ibgateway-test-default-ib-api-paper ibgateway-test-fix-live-fix-live 2>/dev/null || true
+          docker rm ibgateway-test-default-ib-api-paper ibgateway-test-fix-live-fix-live 2>/dev/null || true
