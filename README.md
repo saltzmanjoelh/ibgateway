@@ -25,6 +25,8 @@ docker build --platform linux/amd64 -t ibgateway .
 docker run --platform linux/amd64 \
   -p 5900:5900 \
   -p 8080:8080 \
+  -p 4003:4003 \
+  -p 4004:4004 \
   -it --rm ibgateway
 ```
 
@@ -33,8 +35,11 @@ docker run --platform linux/amd64 \
 ```bash
 docker run --platform linux/amd64 \
   -v $(pwd)/automate-ibgateway.sh:/automate-ibgateway.sh \
+  -v $(pwd)/.env:/.env \
   -p 5900:5900 \
   -p 8080:8080 \
+  -p 4003:4003 \
+  -p 4004:4004 \
   -it --rm ibgateway
 ```
 
@@ -42,6 +47,10 @@ docker run --platform linux/amd64 \
 
 - **5900**: noVNC web interface (access at `http://localhost:5900`)
 - **8080**: Screenshot HTTP service (access at `http://localhost:8080`)
+- **4003**: IB Gateway Live Trading Port (forwarded to internal port 4001)
+- **4004**: IB Gateway Paper Trading Port (forwarded to internal port 4002)
+
+**Note**: IB Gateway only accepts connections from `127.0.0.1` (localhost). The container uses `socat` to forward external ports 4003 and 4004 to the internal ports 4001 and 4002 respectively. Ports 4001 and 4002 are internal-only and should not be exposed directly from the container.
 
 ## Screenshot Service
 
@@ -189,6 +198,8 @@ docker run --platform linux/amd64 \
   -v $(pwd)/automate-ibgateway.sh:/automate-ibgateway.sh \
   -p 5900:5900 \
   -p 8080:8080 \
+  -p 4003:4003 \
+  -p 4004:4004 \
   -it --rm ibgateway
 ```
 
@@ -197,6 +208,8 @@ docker run --platform linux/amd64 \
 docker run --platform linux/amd64 \
   -p 5900:5900 \
   -p 8080:8080 \
+  -p 4003:4003 \
+  -p 4004:4004 \
   -it --rm ibgateway
 ```
 
@@ -209,6 +222,8 @@ docker run --platform linux/amd64 \
   -e IB_TRADING_MODE=LIVE \
   -p 5900:5900 \
   -p 8080:8080 \
+  -p 4003:4003 \
+  -p 4004:4004 \
   -it --rm ibgateway
 ```
 
@@ -219,6 +234,8 @@ docker run --platform linux/amd64 \
   -e IB_TRADING_MODE=PAPER \
   -p 5900:5900 \
   -p 8080:8080 \
+  -p 4003:4003 \
+  -p 4004:4004 \
   -v $(pwd)/automate-ibgateway.sh:/automate-ibgateway.sh \
   -it --rm ibgateway
 ```
@@ -244,7 +261,9 @@ The repository includes test scripts to verify automation functionality:
 **Test automation script** (requires running container):
 ```bash
 # Start container first
-docker run -d --name ibgateway-test --platform linux/amd64 -p 5900:5900 -p 8080:8080 ibgateway-test:latest
+docker run -d --name ibgateway-test --platform linux/amd64 \
+  -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 \
+  ibgateway-test:latest
 
 # Run automation tests
 ./test-automation.sh ibgateway-test

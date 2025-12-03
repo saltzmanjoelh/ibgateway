@@ -22,7 +22,7 @@
         {
             "label": "Docker Run",
             "type": "shell",
-            "command": "docker run --platform linux/amd64 -e RESOLUTION=1024x768 -v $(pwd)/automate-ibgateway.sh:/automate-ibgateway.sh -p 5900:5900 -p 8080:8080 -it --rm ibgateway",
+            "command": "docker run --platform linux/amd64 -v $(pwd)/.env:/.env -v $(pwd)/automate-ibgateway.sh:/automate-ibgateway.sh -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 -it --rm ibgateway",
             "group": "test",
             "presentation": {
                 "echo": true,
@@ -55,7 +55,7 @@
         {
             "label": "Docker Bash",
             "type": "shell",
-            "command": "docker exec -it $(docker ps -q -f ancestor=ibgateway) bash || docker run --platform linux/amd64 -e RESOLUTION=1024x768 -v $(pwd)/automate-ibgateway.sh:/automate-ibgateway.sh -p 5900:5900 -p 8080:8080 -it --rm ibgateway bash",
+            "command": "docker exec -it $(docker ps -q -f ancestor=ibgateway) bash || docker run --platform linux/amd64 -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 -it --rm ibgateway bash",
             "group": "test",
             "presentation": {
                 "echo": true,
