@@ -225,7 +225,7 @@ jobs:
         id: test_default
         run: |
           python3 ibgateway_cli.py test-automation \
-            --container-name ibgateway-default \
+            --container-name ibgateway \
             --api-type IB_API \
             --trading-mode PAPER \
             --ci
@@ -253,11 +253,11 @@ jobs:
         run: |
           echo "=== Container logs (if any containers exist) ==="
           docker ps -a || true
-          docker logs ibgateway-default 2>&1 | tail -50 || true
+          docker logs ibgateway 2>&1 | tail -50 || true
           docker logs ibgateway-fix-live 2>&1 | tail -50 || true
 
       - name: Cleanup
         if: always()
         run: |
-          docker stop ibgateway-default ibgateway-fix-live 2>/dev/null || true
-          docker rm ibgateway-default ibgateway-fix-live 2>/dev/null || true
+          docker stop ibgateway ibgateway-fix-live 2>/dev/null || true
+          docker rm ibgateway ibgateway-fix-live 2>/dev/null || true

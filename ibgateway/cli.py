@@ -424,7 +424,8 @@ class IBGatewayCLI:
             
             # Wait for automation to complete
             print("Waiting for automation to complete...")
-            time.sleep(15)
+            if not self._wait_for_log_message(container_name_test, "Configuration Complete", timeout=60):
+                print("WARNING: Automation completion message not found in logs")
             
             # Take verification screenshot
             print("Taking verification screenshot...")
@@ -642,6 +643,21 @@ class IBGatewayCLI:
             except Exception:
                 if i < timeout - 1:
                     time.sleep(1)
+        return False
+    
+    def _wait_for_log_message(self, container_name: str, message: str, timeout: int = 60) -> bool:
+        """Wait for a specific message to appear in container logs."""
+        print(f"Waiting for log message: '{message}'...")
+        for i in range(timeout):
+            logs = self._docker_logs(container_name)
+            if message.lower() in logs.lower():
+                print(f"✓ Found log message: '{message}'")
+                return True
+            if i < timeout - 1:
+                time.sleep(1)
+                if (i + 1) % 5 == 0:
+                    print(f"Still waiting... ({i + 1}/{timeout}s)")
+        print(f"✗ Log message '{message}' not found after {timeout}s")
         return False
     
     def _wait_for_ibgateway_window(self, container_name: str, timeout: int = 90) -> Optional[str]:
