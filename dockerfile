@@ -27,9 +27,6 @@ RUN apt-get update && apt-get install -y \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies for CLI tool
-RUN pip3 install python-dotenv Pillow
-
 # 2. Install noVNC and Websockify
 RUN mkdir -p /opt/novnc \
     && git clone https://github.com/novnc/noVNC.git /opt/novnc \
@@ -37,12 +34,17 @@ RUN mkdir -p /opt/novnc \
     && ln -s /opt/novnc/vnc.html /opt/novnc/index.html \
     && cd /opt/novnc/utils/websockify && pip3 install .
 
-# 3. Copy CLI package and install IB Gateway
+# 3. Copy CLI package and requirements, then install Python dependencies
 COPY ibgateway/ /ibgateway/
 COPY ibgateway_cli.py /ibgateway_cli.py
-RUN chmod +x /ibgateway_cli.py && python3 /ibgateway_cli.py install
+COPY requirements.txt /requirements.txt
+RUN pip3 install --no-cache-dir -r /requirements.txt && \
+    chmod +x /ibgateway_cli.py
 
-# 4. Copy entrypoint script
+# 4. Install IB Gateway using CLI tool
+RUN python3 /ibgateway_cli.py install
+
+# 5. Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
