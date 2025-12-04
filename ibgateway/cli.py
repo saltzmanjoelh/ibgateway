@@ -362,7 +362,7 @@ class IBGatewayCLI:
         else:
             configs = [("IB_API", "PAPER"), ("FIX", "LIVE")]
         
-        screenshot_dir = "/tmp/test-screenshots" if ci_mode else "/tmp/ibgateway-automation-tests"
+        screenshot_dir = "/tmp/screenshots"
         os.makedirs(screenshot_dir, exist_ok=True)
         
         passed = 0
@@ -524,7 +524,8 @@ class IBGatewayCLI:
             return 1
         
         # Save to temp file and verify
-        temp_path = "/tmp/test-screenshot.png"
+        os.makedirs("/tmp/screenshots", exist_ok=True)
+        temp_path = os.path.join("/tmp/screenshots", screenshot_filename)
         with open(temp_path, "wb") as f:
             f.write(screenshot_data)
         
