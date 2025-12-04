@@ -2,14 +2,13 @@
 
 Docker image for running Interactive Brokers Gateway in a headless environment with web-based VNC access (noVNC) and screenshot capabilities.
 
-> **Note**: This PR is created to test the screenshot workflow functionality.
-
 ## Features
 
 - **Headless IB Gateway**: Runs IB Gateway under Xvfb (virtual framebuffer)
 - **Web-based VNC Access**: Access the GUI via noVNC in your web browser
 - **Screenshot Service**: Take screenshots and view them via HTTP API
-- **Automation Support**: Includes automation scripts for GUI interactions
+- **Python CLI Tool**: Unified command-line interface for automation, testing, and screenshot management
+- **Automation Support**: Automated GUI configuration using xdotool
 
 ## Building
 
@@ -32,12 +31,14 @@ docker run --platform linux/amd64 \
   -it --rm ibgateway
 ```
 
-### With Volume Mounts (for custom scripts)
+### With Environment Variables
 
 ```bash
 docker run --platform linux/amd64 \
-  -v $(pwd)/automate-ibgateway.sh:/automate-ibgateway.sh \
-  -v $(pwd)/.env:/.env \
+  -e IB_USERNAME=myusername \
+  -e IB_PASSWORD=mypassword \
+  -e IB_API_TYPE=IB_API \
+  -e IB_TRADING_MODE=PAPER \
   -p 5900:5900 \
   -p 8080:8080 \
   -p 4003:4003 \
@@ -120,13 +121,10 @@ When working on automation scripts, you can:
    ![Screenshot](http://localhost:8080/screenshots/screenshot_20240101_120000.png)
    ```
 
-### Example: Monitoring Automation Script
+### Example: Monitoring Automation
 
 ```bash
-# Run automation script
-./automate-ibgateway.sh &
-
-# Take screenshot after script starts
+# Take screenshot after automation starts
 sleep 5
 SCREENSHOT_URL=$(curl -s http://localhost:8080/screenshot | jq -r '.full_url')
 echo "Screenshot available at: $SCREENSHOT_URL"
@@ -140,22 +138,20 @@ done
 
 ## Automation
 
-The image includes automation scripts for GUI interactions:
-
-- `automate-ibgateway.sh`: Script using xdotool to automatically configure IB Gateway window
-- `run-ibgateway.sh`: Script to run IB Gateway under Xvfb
+The image includes Python-based automation for GUI interactions using xdotool. Automation is handled automatically when the container starts, or can be run manually using the CLI tool.
 
 ### IB Gateway Configuration
 
-The `automate-ibgateway.sh` script automatically configures the IB Gateway window when it starts. You can control the configuration using:
+The automation system automatically configures the IB Gateway window when the container starts. You can control the configuration using:
 
-1. **`.env` file** (recommended for credentials): Create a `.env` file in the same directory as the script
-2. **Environment variables**: Passed via `-e` flags or exported before running
+1. **Environment variables**: Passed via `-e` flags when running the container
+2. **`.env` file**: Mount a `.env` file into the container (read by the entrypoint script)
 
-The script will:
-- Automatically type username and password into login fields
+The automation will:
+- Automatically type username and password into login fields (if provided)
 - Configure API type (FIX or IB_API)
 - Configure trading mode (LIVE or PAPER)
+- Log "Configuration Complete" when finished
 
 #### Configuration Options
 
@@ -183,27 +179,6 @@ IB_TRADING_MODE=PAPER
 **Note**: Environment variables take precedence over `.env` file values. This allows you to override specific values when needed.
 
 #### Examples
-
-**Using .env file (recommended for credentials)**:
-```bash
-# Create .env file
-cat > .env << EOF
-IB_USERNAME=myusername
-IB_PASSWORD=mypassword
-IB_API_TYPE=IB_API
-IB_TRADING_MODE=PAPER
-EOF
-
-# Run with .env file mounted
-docker run --platform linux/amd64 \
-  -v $(pwd)/.env:/.env \
-  -v $(pwd)/automate-ibgateway.sh:/automate-ibgateway.sh \
-  -p 5900:5900 \
-  -p 8080:8080 \
-  -p 4003:4003 \
-  -p 4004:4004 \
-  -it --rm ibgateway
-```
 
 **Default configuration (IB API + Paper Trading)**:
 ```bash
@@ -238,7 +213,26 @@ docker run --platform linux/amd64 \
   -p 8080:8080 \
   -p 4003:4003 \
   -p 4004:4004 \
-  -v $(pwd)/automate-ibgateway.sh:/automate-ibgateway.sh \
+  -it --rm ibgateway
+```
+
+**Using .env file (recommended for credentials)**:
+```bash
+# Create .env file
+cat > .env << EOF
+IB_USERNAME=myusername
+IB_PASSWORD=mypassword
+IB_API_TYPE=IB_API
+IB_TRADING_MODE=PAPER
+EOF
+
+# Run with .env file mounted
+docker run --platform linux/amd64 \
+  -v $(pwd)/.env:/.env \
+  -p 5900:5900 \
+  -p 8080:8080 \
+  -p 4003:4003 \
+  -p 4004:4004 \
   -it --rm ibgateway
 ```
 
@@ -254,43 +248,100 @@ docker run --platform linux/amd64 \
 
 **Note**: Environment variables take precedence over values in `.env` file. This allows you to override specific values when needed.
 
-## Testing
+## Python CLI Tool
 
-The repository includes test scripts to verify automation functionality:
+The repository includes a Python CLI tool (`ibgateway_cli.py`) for automation, testing, and screenshot management.
+
+### Installation
+
+Install Python dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+### Available Commands
+
+**Automate IB Gateway configuration**:
+```bash
+python3 ibgateway_cli.py automate \
+  --username myusername \
+  --password mypassword \
+  --api-type IB_API
+```
+
+**Take a screenshot**:
+```bash
+python3 ibgateway_cli.py screenshot --output /path/to/screenshot.png
+```
+
+**Start screenshot HTTP server**:
+```bash
+python3 ibgateway_cli.py screenshot-server --port 8080
+```
+
+**Compare two screenshots**:
+```bash
+python3 ibgateway_cli.py compare-screenshots screenshot1.png screenshot2.png
+```
+
+**Test automation** (requires running container):
+```bash
+python3 ibgateway_cli.py test-automation \
+  --container-name ibgateway-test \
+  --api-type IB_API \
+  --trading-mode PAPER \
+  --ci
+```
+
+**Test screenshot service** (requires running container):
+```bash
+python3 ibgateway_cli.py test-screenshot-service \
+  --container-name ibgateway-test \
+  --port 8080
+```
+
+## Testing
 
 ### Local Testing
 
-**Test automation script** (requires running container):
+**Test automation** (requires running container):
 ```bash
 # Start container first
 docker run -d --name ibgateway-test --platform linux/amd64 \
   -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 \
   ibgateway:latest
 
+# Install Python dependencies
+pip install -r requirements.txt
+
 # Run automation tests
-./test-automation.sh ibgateway-test
+python3 ibgateway_cli.py test-automation \
+  --container-name ibgateway-test \
+  --api-type IB_API \
+  --trading-mode PAPER
+
+# Test screenshot service
+python3 ibgateway_cli.py test-screenshot-service \
+  --container-name ibgateway-test \
+  --port 8080
 ```
 
-**CI-friendly test script**:
+**Compare screenshots**:
 ```bash
-./test-automation-ci.sh ibgateway-test
-```
-
-**Compare screenshots** (optional, requires Pillow):
-```bash
-pip install Pillow
-./compare-screenshots.py screenshot1.png screenshot2.png
+pip install -r requirements.txt
+python3 ibgateway_cli.py compare-screenshots screenshot1.png screenshot2.png
 ```
 
 ### Automated Testing
 
 Tests run automatically in GitHub Actions on pull requests:
+- **Screenshot Service Test**: Verifies the HTTP screenshot API endpoints
 - **Default Configuration Test**: Verifies IB_API + PAPER configuration
 - **FIX + LIVE Test**: Verifies FIX + LIVE configuration
 - **Screenshot Verification**: Takes screenshots after automation for visual verification
-- **Log Verification**: Checks container logs for automation completion messages
+- **Log Verification**: Waits for "Configuration Complete" message in container logs
 
-Test screenshots are uploaded as artifacts and can be downloaded from the workflow run.
+Test screenshots are saved to `/tmp/screenshots/` and uploaded as artifacts. They can be downloaded from the workflow run.
 
 ## Troubleshooting
 

@@ -75,20 +75,20 @@ echo "DISPLAY=$DISPLAY"
 # Wait for IB Gateway window to appear, then automate configuration
 echo "=== Waiting for IB Gateway to start, then automating configuration ==="
 sleep 5
-python3 -m ibgateway.cli automate &
+python3 /ibgateway_cli.py automate &
 AUTOMATE_PID=$!
 echo "Automation script started (PID: $AUTOMATE_PID)"
 
 # Start screenshot HTTP server on port 8080
 echo "=== Starting screenshot HTTP server on port 8080 ==="
-python3 -m ibgateway.cli screenshot-server --port 8080 &
+python3 /ibgateway_cli.py screenshot-server --port 8080 &
 sleep 1
 echo "Screenshot service available at: http://localhost:8080/"
 
 # Start socat port forwarding for IB Gateway
 # IB Gateway only accepts connections from 127.0.0.1, so we forward external ports
 echo "=== Starting socat port forwarding ==="
-python3 -m ibgateway.cli port-forward &
+python3 /ibgateway_cli.py port-forward &
 SOCAT_PID=$!
 echo "Socat forwarding started (PID: $SOCAT_PID)"
 sleep 2

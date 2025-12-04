@@ -132,6 +132,7 @@ class AutomationHandler:
                 self.PAPER_TRADING_BUTTON_Y,
                 "Paper Trading"
             )
+        time.sleep(1)
     
     def type_username(self, window_id: str):
         """Type username into the focused field."""
