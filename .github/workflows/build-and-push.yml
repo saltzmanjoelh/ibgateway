@@ -79,31 +79,31 @@ jobs:
           platforms: linux/amd64
           push: false
           load: true
-          tags: ibgateway-test:latest
+          tags: ibgateway:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Verify image was built
         run: |
           echo "Checking if image exists..."
-          docker images | grep ibgateway-test || docker image inspect ibgateway-test:latest
+          docker images | grep ibgateway || docker image inspect ibgateway:latest
           echo "✓ Image verified"
 
       - name: Start container
         run: |
           docker run -d \
-            --name ibgateway-test \
+            --name ibgateway \
             --platform linux/amd64 \
             -p 5900:5900 \
             -p 8080:8080 \
-            ibgateway-test:latest
+            ibgateway:latest
           
           echo "Waiting for services to start..."
           sleep 15
 
       - name: Check container is running
         run: |
-          docker ps | grep ibgateway-test || exit 1
+          docker ps | grep ibgateway || exit 1
           echo "Container is running"
 
       - name: Check screenshot service is accessible
@@ -116,7 +116,7 @@ jobs:
             fi
             if [ $i -eq 30 ]; then
               echo "Screenshot service failed to start"
-              docker logs ibgateway-test
+              docker logs ibgateway
               exit 1
             fi
             echo "Waiting for screenshot service... ($i/30)"
@@ -129,19 +129,13 @@ jobs:
           sudo apt-get install -y python3-pip
           pip3 install --no-cache-dir -r requirements.txt
 
-      - name: Copy CLI tool to container
-        run: |
-          docker cp ibgateway/ ibgateway-test:/ibgateway/
-          docker cp ibgateway_cli.py ibgateway-test:/ibgateway_cli.py
-          docker exec ibgateway-test chmod +x /ibgateway_cli.py
-
       - name: Test screenshot service
         id: test_screenshot
         run: |
-          python3 ibgateway_cli.py test-screenshot-service --container-name ibgateway-test --port 8080
+          python3 ibgateway_cli.py test-screenshot-service --container-name ibgateway --port 8080
           
           # Extract screenshot filename from container for artifact upload
-          SCREENSHOT_FILENAME=$(docker exec ibgateway-test ls -t /tmp/screenshots/*.png 2>/dev/null | head -1 | xargs basename 2>/dev/null || echo "test-screenshot.png")
+          SCREENSHOT_FILENAME=$(docker exec ibgateway sh -c 'ls -t /tmp/screenshots/*.png 2>/dev/null' | head -1 | xargs basename 2>/dev/null || echo "test-screenshot.png")
           echo "screenshot_filename=$SCREENSHOT_FILENAME" >> $GITHUB_OUTPUT
 
       - name: Upload screenshot artifact
@@ -156,10 +150,10 @@ jobs:
         if: failure()
         run: |
           echo "=== Container logs ==="
-          docker logs ibgateway-test || true
+          docker logs ibgateway || true
           echo ""
           echo "=== Container processes ==="
-          docker exec ibgateway-test ps aux || true
+          docker exec ibgateway ps aux || true
 
       - name: Post test results to PR
         if: success()
@@ -192,8 +186,8 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker stop ibgateway-test || true
-          docker rm ibgateway-test || true
+          docker stop ibgateway || true
+          docker rm ibgateway || true
 
   test-automation:
     runs-on: ubuntu-latest
@@ -204,7 +198,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -217,7 +211,7 @@ jobs:
           platforms: linux/amd64
           push: false
           load: true
-          tags: ibgateway-test:latest
+          tags: ibgateway:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -227,20 +221,11 @@ jobs:
           sudo apt-get install -y python3-pip
           pip3 install --no-cache-dir -r requirements.txt
 
-      - name: Copy CLI tool to container
-        run: |
-          docker cp ibgateway/ ibgateway-test-default:/ibgateway/
-          docker cp ibgateway_cli.py ibgateway-test-default:/ibgateway_cli.py
-          docker exec ibgateway-test-default chmod +x /ibgateway_cli.py
-          docker cp ibgateway/ ibgateway-test-fix-live:/ibgateway/
-          docker cp ibgateway_cli.py ibgateway-test-fix-live:/ibgateway_cli.py
-          docker exec ibgateway-test-fix-live chmod +x /ibgateway_cli.py
-
       - name: Test automation - Default (IB_API + PAPER)
         id: test_default
         run: |
           python3 ibgateway_cli.py test-automation \
-            --container-name ibgateway-test-default \
+            --container-name ibgateway-default \
             --api-type IB_API \
             --trading-mode PAPER \
             --ci
@@ -249,7 +234,7 @@ jobs:
         id: test_fix_live
         run: |
           python3 ibgateway_cli.py test-automation \
-            --container-name ibgateway-test-fix-live \
+            --container-name ibgateway-fix-live \
             --api-type FIX \
             --trading-mode LIVE \
             --ci
@@ -268,11 +253,11 @@ jobs:
         run: |
           echo "=== Container logs (if any containers exist) ==="
           docker ps -a || true
-          docker logs ibgateway-test-default 2>&1 | tail -50 || true
-          docker logs ibgateway-test-fix-live 2>&1 | tail -50 || true
+          docker logs ibgateway-default 2>&1 | tail -50 || true
+          docker logs ibgateway-fix-live 2>&1 | tail -50 || true
 
       - name: Cleanup
         if: always()
         run: |
-          docker stop ibgateway-test-default ibgateway-test-fix-live 2>/dev/null || true
-          docker rm ibgateway-test-default ibgateway-test-fix-live 2>/dev/null || true
+          docker stop ibgateway-default ibgateway-fix-live 2>/dev/null || true
+          docker rm ibgateway-default ibgateway-fix-live 2>/dev/null || true

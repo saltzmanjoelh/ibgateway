@@ -387,7 +387,7 @@ class IBGatewayCLI:
                 "-p", "8080:8080",
                 "-e", f"IB_API_TYPE={api_type_val}",
                 "-e", f"IB_TRADING_MODE={trading_mode_val}",
-                "ibgateway-test:latest"
+                "ibgateway:latest"
             ]
             
             try:
@@ -477,7 +477,7 @@ class IBGatewayCLI:
         if not self._docker_is_running(container_name):
             print(f"ERROR: Container '{container_name}' is not running")
             print(f"Start it with:")
-            print(f"  docker run -d --name {container_name} --platform linux/amd64 -p 5900:5900 -p {port}:{port} ibgateway-test:latest")
+            print(f"  docker run -d --name {container_name} --platform linux/amd64 -p 5900:5900 -p {port}:{port} ibgateway:latest")
             return 1
         
         print("✓ Container is running")

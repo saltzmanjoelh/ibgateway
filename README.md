@@ -265,7 +265,7 @@ The repository includes test scripts to verify automation functionality:
 # Start container first
 docker run -d --name ibgateway-test --platform linux/amd64 \
   -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 \
-  ibgateway-test:latest
+  ibgateway:latest
 
 # Run automation tests
 ./test-automation.sh ibgateway-test
