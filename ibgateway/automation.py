@@ -18,14 +18,14 @@ class AutomationHandler:
         self.verbose = verbose
         
         # Button coordinates (relative to content window)
-        self.FIX_BUTTON_X = 500
-        self.FIX_BUTTON_Y = 270
-        self.IB_API_BUTTON_X = 630
-        self.IB_API_BUTTON_Y = 270
-        self.LIVE_TRADING_BUTTON_X = 500
-        self.LIVE_TRADING_BUTTON_Y = 340
-        self.PAPER_TRADING_BUTTON_X = 629
-        self.PAPER_TRADING_BUTTON_Y = 310
+        self.FIX_BUTTON_X = 311
+        self.FIX_BUTTON_Y = 212
+        self.IB_API_BUTTON_X = 510
+        self.IB_API_BUTTON_Y = 212
+        self.LIVE_TRADING_BUTTON_X = 311
+        self.LIVE_TRADING_BUTTON_Y = 212
+        self.PAPER_TRADING_BUTTON_X = 506
+        self.PAPER_TRADING_BUTTON_Y = 229
     
     def log(self, message: str):
         """Print log message if verbose."""
@@ -172,6 +172,13 @@ class AutomationHandler:
             self.log(f"  Window ID: {wid} | Name: '{name}' | Class: '{class_name}'")
         self.log("")
     
+    def move_window_to_top_left(self, window_id: str):
+        """Move window to top-left corner (0, 0)."""
+        self.log(f"Moving window {window_id} to top-left corner (0, 0)")
+        self.run_xdotool("windowmove", window_id, "0", "0")
+        time.sleep(0.5)
+        self.log("✓ Window moved to top-left corner")
+    
     def automate(self) -> int:
         """Main automation function."""
         self.config.print_config()
@@ -182,6 +189,7 @@ class AutomationHandler:
             return 1
         
         self.log(f"Content window ID: {window_id}")
+        self.move_window_to_top_left(window_id)
         self.log("Waiting for window to fully render...")
         time.sleep(2)
         
