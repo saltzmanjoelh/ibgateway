@@ -19,13 +19,13 @@ class AutomationHandler:
         
         # Button coordinates (relative to content window)
         self.FIX_BUTTON_X = 500
-        self.FIX_BUTTON_Y = 300
-        self.IB_API_BUTTON_X = 700
-        self.IB_API_BUTTON_Y = 300
+        self.FIX_BUTTON_Y = 270
+        self.IB_API_BUTTON_X = 630
+        self.IB_API_BUTTON_Y = 270
         self.LIVE_TRADING_BUTTON_X = 500
         self.LIVE_TRADING_BUTTON_Y = 340
-        self.PAPER_TRADING_BUTTON_X = 700
-        self.PAPER_TRADING_BUTTON_Y = 300
+        self.PAPER_TRADING_BUTTON_X = 629
+        self.PAPER_TRADING_BUTTON_Y = 310
     
     def log(self, message: str):
         """Print log message if verbose."""
@@ -39,7 +39,6 @@ class AutomationHandler:
         cmd = ["xdotool"] + list(args)
         env = os.environ.copy()
         env["DISPLAY"] = self.config.display
-        
         try:
             result = subprocess.run(
                 cmd,
@@ -65,12 +64,7 @@ class AutomationHandler:
         elapsed = 0
         while elapsed < timeout:
             # Try multiple search methods
-            window_id = self.run_xdotool("search", "--class", "install4j-ibgateway-GWClient")
-            if not window_id:
-                window_id = self.run_xdotool("search", "--name", "IBKR Gateway")
-            if not window_id:
-                window_id = self.run_xdotool("search", "--all", "--name", "IB")
-            
+            window_id = self.run_xdotool("search", "--name", "IBKR Gateway")
             if window_id:
                 self.log(f"✓ IB Gateway window found! Window ID: {window_id}")
                 return window_id.split()[0] if window_id else None
@@ -86,11 +80,12 @@ class AutomationHandler:
         self.log(f"Clicking {button_name} at coordinates ({x}, {y})")
         
         # Move mouse to location
-        self.run_xdotool("mousemove", "--window", window_id, str(x), str(y))
+        self.run_xdotool("mousemove", str(x), str(y))
         time.sleep(0.3)
         
         # Click
-        self.run_xdotool("click", "--window", window_id, "1")
+        self.run_xdotool("click", "1")
+        self.run_xdotool("click", "1")
         time.sleep(0.5)
         
         self.log(f"✓ Clicked {button_name}")
@@ -158,9 +153,29 @@ class AutomationHandler:
         time.sleep(0.5)
         self.log("✓ Password typed")
     
+    def list_all_windows(self):
+        """List all windows with their IDs and names."""
+        self.log("=== Listing All Windows ===")
+        window_ids_output = self.run_xdotool("search", "--all", ".")
+        if not window_ids_output:
+            self.log("No windows found")
+            return
+        
+        window_ids = [wid.strip() for wid in window_ids_output.split('\n') if wid.strip()]
+        if not window_ids:
+            self.log("No windows found")
+            return
+        
+        for wid in window_ids:
+            name = self.run_xdotool("getwindowname", wid) or "(no name)"
+            class_name = self.run_xdotool("getwindowclassname", wid) or "(no class)"
+            self.log(f"  Window ID: {wid} | Name: '{name}' | Class: '{class_name}'")
+        self.log("")
+    
     def automate(self) -> int:
         """Main automation function."""
         self.config.print_config()
+        self.list_all_windows()
         
         window_id = self.find_ibgateway_window()
         if not window_id:
