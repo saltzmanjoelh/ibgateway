@@ -4,7 +4,7 @@
         {
             "label": "Docker Build (linux/amd64)",
             "type": "shell",
-            "command": "docker build --platform linux/amd64 -t ibgateway .",
+            "command": "docker build --platform linux/amd64 -t ibgateway:latest .",
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -22,7 +22,7 @@
         {
             "label": "Docker Run",
             "type": "shell",
-            "command": "docker run --platform linux/amd64 -v $(pwd)/.env:/.env -v $(pwd)/automate-ibgateway.sh:/automate-ibgateway.sh -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 -it --rm ibgateway",
+            "command": "docker run --platform linux/amd64 -v $(pwd)/.env:/.env -v $(pwd)/ibgateway:/ibgateway -v $(pwd)/ibgateway_cli.py:/ibgateway_cli.py -v $(pwd)/requirements.txt:/requirements.txt -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 -it --rm ibgateway",
             "group": "test",
             "presentation": {
                 "echo": true,
@@ -66,7 +66,81 @@
                 "clear": false
             },
             "problemMatcher": []
+        },
+        {
+            "label": "CLI: Automate",
+            "type": "shell",
+            "command": "python3 ibgateway_cli.py automate",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "CLI: Screenshot",
+            "type": "shell",
+            "command": "python3 ibgateway_cli.py screenshot",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "CLI: Screenshot Server",
+            "type": "shell",
+            "command": "python3 ibgateway_cli.py screenshot-server --port 8080",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "CLI: Test Automation",
+            "type": "shell",
+            "command": "python3 ibgateway_cli.py test-automation",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "CLI: Test Screenshot Service",
+            "type": "shell",
+            "command": "python3 ibgateway_cli.py test-screenshot-service",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
         }
     ]
 }
-

@@ -42,6 +42,28 @@ else
     echo "websockify not in PATH, will use python3 -m websockify"
 fi
 
+# Start noVNC proxy with verbose logging
+# websockify listens on 5900 (web access) and proxies to VNC on 5901
+# Runs in background - output logged to file and tailed for container logs
+echo "=== Starting noVNC proxy with verbose logging ==="
+# Create log file and tail it in background so we can see it in docker logs
+touch /tmp/websockify.log
+tail -f /tmp/websockify.log &
+
+# Use websockify as installed Python package
+# Format: websockify --web=<web_dir> <listen_port> <vnc_host>:<vnc_port>
+# Run in background - output goes to log file which is tailed for container logs
+echo "Starting websockify: listening on 5900 (web), connecting to localhost:5901 (VNC)"
+# Try websockify command first, fallback to python module if not found
+if command -v websockify &> /dev/null; then
+    websockify --web=/opt/novnc 5900 localhost:5901 -v -v -v --log-file=/tmp/websockify.log &
+else
+    python3 -m websockify --web=/opt/novnc 5900 localhost:5901 -v -v -v --log-file=/tmp/websockify.log &
+fi
+WEBSOCKIFY_PID=$!
+echo "Websockify started (PID: $WEBSOCKIFY_PID)"
+sleep 2
+
 # Debug: Show environment
 echo "=== Environment ==="
 echo "RESOLUTION=$RESOLUTION"
@@ -53,40 +75,29 @@ echo "DISPLAY=$DISPLAY"
 # Wait for IB Gateway window to appear, then automate configuration
 echo "=== Waiting for IB Gateway to start, then automating configuration ==="
 sleep 5
-/automate-ibgateway.sh &
+python3 /ibgateway_cli.py automate &
 AUTOMATE_PID=$!
 echo "Automation script started (PID: $AUTOMATE_PID)"
 
 # Start screenshot HTTP server on port 8080
 echo "=== Starting screenshot HTTP server on port 8080 ==="
-python3 /screenshot-server.py &
+python3 /ibgateway_cli.py screenshot-server --port 8080 &
 sleep 1
 echo "Screenshot service available at: http://localhost:8080/"
 
 # Start socat port forwarding for IB Gateway
 # IB Gateway only accepts connections from 127.0.0.1, so we forward external ports
 echo "=== Starting socat port forwarding ==="
-/start-socat-forwarding.sh &
+python3 /ibgateway_cli.py port-forward &
 SOCAT_PID=$!
 echo "Socat forwarding started (PID: $SOCAT_PID)"
 sleep 2
 
-# Start noVNC proxy with verbose logging
-# websockify listens on 5900 (web access) and proxies to VNC on 5901
-# This runs in FOREGROUND to keep the container alive
-echo "=== Starting noVNC proxy with verbose logging ==="
-# Create log file and tail it in background so we can see it in docker logs
-touch /tmp/websockify.log
-tail -f /tmp/websockify.log &
-
-# Use websockify as installed Python package
-# Format: websockify --web=<web_dir> <listen_port> <vnc_host>:<vnc_port>
-# This MUST run in foreground (no &) to keep container running
-echo "Starting websockify: listening on 5900 (web), connecting to localhost:5901 (VNC)"
-# Try websockify command first, fallback to python module if not found
-if command -v websockify &> /dev/null; then
-    exec websockify --web=/opt/novnc 5900 localhost:5901 -v -v -v --log-file=/tmp/websockify.log
-else
-    exec python3 -m websockify --web=/opt/novnc 5900 localhost:5901 -v -v -v --log-file=/tmp/websockify.log
-fi
-
+# Keep container running
+# Tail all log files together so we can see output in docker logs
+echo "=== All services started, keeping container alive ==="
+echo "Container is ready. Logs will be streamed below."
+# Keep container alive indefinitely - wait for interrupt signal
+while true; do
+    sleep 3600
+done
