@@ -145,6 +145,7 @@ class IBGatewayCLI:
         print(f"Screenshot server starting on port {port}")
         print(f"Screenshots directory: {self.config.screenshot_dir}")
         print(f"Access the service at: http://localhost:{port}/")
+        print(f"=== Screenshot service ready on port {port} ===")
         
         try:
             server.serve_forever()

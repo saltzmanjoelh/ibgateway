@@ -52,29 +52,20 @@ jobs:
             --platform linux/amd64 \
             -p 8080:8080 \
             ibgateway:latest
-          
-          echo "Waiting for services to start..."
-          sleep 15
 
-      - name: Check container is running
+      - name: Wait for container to be ready
         run: |
-          docker ps | grep ibgateway || exit 1
-          echo "Container is running"
-
-      - name: Check screenshot service is accessible
-        run: |
-          echo "Checking screenshot service health..."
-          for i in {1..30}; do
-            if curl -f -s http://localhost:8080/ > /dev/null 2>&1; then
-              echo "Screenshot service is accessible"
+          echo "Waiting for container to be ready..."
+          for i in {1..120}; do
+            if docker logs ibgateway 2>&1 | grep -q "=== All services ready ==="; then
+              echo "✓ Container is ready"
               break
             fi
-            if [ $i -eq 30 ]; then
-              echo "Screenshot service failed to start"
-              docker logs ibgateway
+            if [ $i -eq 120 ]; then
+              echo "ERROR: Container failed to become ready"
+              docker logs ibgateway 2>&1 | tail -50
               exit 1
             fi
-            echo "Waiting for screenshot service... ($i/30)"
             sleep 2
           done
 

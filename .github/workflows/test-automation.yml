@@ -63,44 +63,20 @@ jobs:
             -e IB_TRADING_MODE=${{ matrix.config.trading_mode }} \
             ibgateway:latest
 
-      - name: Wait for services to start
+      - name: Wait for container to be ready
         run: |
-          echo "Waiting for services to start..."
-          sleep 20
-
-      - name: Verify container is running
-        run: |
-          docker ps | grep ${{ matrix.config.name }} || exit 1
-          echo "Container ${{ matrix.config.name }} is running"
-
-      - name: Wait for screenshot service
-        run: |
-          echo "Waiting for screenshot service..."
-          for i in {1..30}; do
-            if curl -f -s http://localhost:${{ matrix.config.screenshot_port }}/ > /dev/null 2>&1; then
-              echo "Screenshot service is accessible"
+          echo "Waiting for container to be ready..."
+          for i in {1..120}; do
+            if docker logs ${{ matrix.config.name }} 2>&1 | grep -q "=== All services ready ==="; then
+              echo "✓ Container is ready"
               break
             fi
-            if [ $i -eq 30 ]; then
-              echo "Screenshot service failed to start"
-              docker logs ${{ matrix.config.name }}
+            if [ $i -eq 120 ]; then
+              echo "ERROR: Container failed to become ready"
+              docker logs ${{ matrix.config.name }} 2>&1 | tail -50
               exit 1
             fi
             sleep 2
-          done
-
-      - name: Wait for automation to complete
-        run: |
-          echo "Waiting for automation to complete..."
-          for i in {1..60}; do
-            if docker logs ${{ matrix.config.name }} 2>&1 | grep -i "configuration complete" > /dev/null; then
-              echo "Automation completed"
-              break
-            fi
-            if [ $i -eq 60 ]; then
-              echo "WARNING: Automation completion message not found"
-            fi
-            sleep 1
           done
 
       - name: Take verification screenshot
