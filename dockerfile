@@ -34,17 +34,23 @@ RUN mkdir -p /opt/novnc \
     && ln -s /opt/novnc/vnc.html /opt/novnc/index.html \
     && cd /opt/novnc/utils/websockify && pip3 install .
 
-# 3. Copy CLI package and requirements, then install Python dependencies
+# 3. Install Poetry
+RUN pip3 install --no-cache-dir poetry && \
+    poetry config virtualenvs.create false
+
+# 4. Copy CLI package and Poetry configuration, then install Python dependencies
 COPY ibgateway/ /ibgateway/
 COPY ibgateway_cli.py /ibgateway_cli.py
-COPY requirements.txt /requirements.txt
-RUN pip3 install --no-cache-dir -r /requirements.txt && \
+COPY pyproject.toml /pyproject.toml
+# Note: poetry.lock is optional - poetry install works without it
+# Use --no-root to skip installing the package itself (only install dependencies)
+RUN poetry install --no-interaction --no-ansi --no-root && \
     chmod +x /ibgateway_cli.py
 
-# 4. Install IB Gateway using CLI tool
+# 5. Install IB Gateway using CLI tool
 RUN python3 /ibgateway_cli.py install
 
-# 5. Copy entrypoint script
+# 6. Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

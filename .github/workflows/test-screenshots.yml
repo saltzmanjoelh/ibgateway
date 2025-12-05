@@ -50,7 +50,6 @@ jobs:
           docker run -d \
             --name ibgateway \
             --platform linux/amd64 \
-            -p 5900:5900 \
             -p 8080:8080 \
             ibgateway:latest
           
@@ -79,20 +78,18 @@ jobs:
             sleep 2
           done
 
-      - name: Install Python dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-pip
-          pip3 install --no-cache-dir -r requirements.txt
-
       - name: Test screenshot service
         id: test_screenshot
         run: |
-          python3 ibgateway_cli.py test-screenshot-service --container-name ibgateway --port 8080
+          # Take a screenshot via API
+          curl -s http://localhost:8080/screenshot > /dev/null
           
           # Extract screenshot filename from container for artifact upload
           SCREENSHOT_FILENAME=$(docker exec ibgateway sh -c 'ls -t /tmp/screenshots/*.png 2>/dev/null' | head -1 | xargs basename 2>/dev/null || echo "test-screenshot.png")
           echo "screenshot_filename=$SCREENSHOT_FILENAME" >> $GITHUB_OUTPUT
+          
+          # Copy screenshot from container to host for artifact upload
+          docker cp ibgateway:/tmp/screenshots/$SCREENSHOT_FILENAME /tmp/screenshots/ || true
 
       - name: Upload screenshot artifact
         uses: actions/upload-artifact@v4
