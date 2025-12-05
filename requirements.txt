@@ -1,8 +1,0 @@
-# IB Gateway CLI Dependencies
-# Core dependencies (required for full functionality)
-python-dotenv>=1.0.0
-Pillow>=10.0.0
-
-# Optional dependencies (for enhanced image comparison)
-numpy>=1.24.0
-
