@@ -1,0 +1,87 @@
+name: Test Automation
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test-automation:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image for testing
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: ibgateway:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install Python dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          pip3 install --no-cache-dir -r requirements.txt
+
+      - name: Test automation - Default (IB_API + PAPER)
+        id: test_default
+        run: |
+          python3 ibgateway_cli.py test-automation \
+            --container-name ibgateway \
+            --api-type IB_API \
+            --trading-mode PAPER \
+            --ci
+
+      - name: Test automation - FIX + LIVE
+        id: test_fix_live
+        run: |
+          python3 ibgateway_cli.py test-automation \
+            --container-name ibgateway-fix-live \
+            --api-type FIX \
+            --trading-mode LIVE \
+            --ci
+
+      - name: Upload automation test screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: automation-test-screenshots
+          path: /tmp/screenshots/*.png
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Show container logs on failure
+        if: failure()
+        run: |
+          echo "=== Container logs (if any containers exist) ==="
+          docker ps -a || true
+          docker logs ibgateway 2>&1 | tail -50 || true
+          docker logs ibgateway-fix-live 2>&1 | tail -50 || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop ibgateway ibgateway-fix-live 2>/dev/null || true
+          docker rm ibgateway ibgateway-fix-live 2>/dev/null || true
