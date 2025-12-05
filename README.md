@@ -33,10 +33,11 @@ docker run --platform linux/amd64 \
 
 ### With Environment Variables
 
+You can either use a .env file or pass them directly. Prefer .env to avoid exposing your password on the CLI. 
+
 ```bash
 docker run --platform linux/amd64 \
-  -e IB_USERNAME=myusername \
-  -e IB_PASSWORD=mypassword \
+  -v $(pwd/.env):/.env \
   -e IB_API_TYPE=IB_API \
   -e IB_TRADING_MODE=PAPER \
   -p 5900:5900 \
@@ -53,7 +54,7 @@ docker run --platform linux/amd64 \
 - **4003**: IB Gateway Live Trading Port (forwarded to internal port 4001)
 - **4004**: IB Gateway Paper Trading Port (forwarded to internal port 4002)
 
-**Note**: IB Gateway only accepts connections from `127.0.0.1` (localhost). The container uses `socat` to forward external ports 4003 and 4004 to the internal ports 4001 and 4002 respectively. Ports 4001 and 4002 are internal-only and should not be exposed directly from the container.
+**Note**: IB Gateway only accepts connections from `127.0.0.1` (localhost). The container uses `socat` to forward external ports 4003 and 4004 to the internal ports 4001 and 4002 respectively. This solves the issue of IB Gateway needing to be configured to support trusted IPs. Ports 4001 and 4002 are internal-only and should not be exposed directly from the container.
 
 ## Screenshot Service
 
@@ -148,9 +149,10 @@ The automation system automatically configures the IB Gateway window when the co
 2. **`.env` file**: Mount a `.env` file into the container (read by the entrypoint script)
 
 The automation will:
-- Automatically type username and password into login fields (if provided)
+- Move the IB Gateway window to the top left position (0, 0)
 - Configure API type (FIX or IB_API)
 - Configure trading mode (LIVE or PAPER)
+- Automatically type username and password into login fields (if provided)
 - Log "Configuration Complete" when finished
 
 #### Configuration Options
@@ -190,6 +192,18 @@ docker run --platform linux/amd64 \
   -it --rm ibgateway
 ```
 
+**IB API with Paper Trading (explicit)**:
+```bash
+docker run --platform linux/amd64 \
+  -e IB_API_TYPE=IB_API \
+  -e IB_TRADING_MODE=PAPER \
+  -p 5900:5900 \
+  -p 8080:8080 \
+  -p 4003:4003 \
+  -p 4004:4004 \
+  -it --rm ibgateway
+```
+
 **FIX API with Live Trading and credentials**:
 ```bash
 docker run --platform linux/amd64 \
@@ -204,17 +218,6 @@ docker run --platform linux/amd64 \
   -it --rm ibgateway
 ```
 
-**IB API with Paper Trading (explicit)**:
-```bash
-docker run --platform linux/amd64 \
-  -e IB_API_TYPE=IB_API \
-  -e IB_TRADING_MODE=PAPER \
-  -p 5900:5900 \
-  -p 8080:8080 \
-  -p 4003:4003 \
-  -p 4004:4004 \
-  -it --rm ibgateway
-```
 
 **Using .env file (recommended for credentials)**:
 ```bash
@@ -250,7 +253,7 @@ docker run --platform linux/amd64 \
 
 ## Python CLI Tool
 
-The repository includes a Python CLI tool (`ibgateway_cli.py`) for automation, testing, and screenshot management.
+The repository includes a Python CLI tool (`ibgateway_cli.py`) for automation, testing, and screenshot management. You can use it from the host machine to start the container and perform automations. It's also used within the container when performing automations. 
 
 ### Installation
 
