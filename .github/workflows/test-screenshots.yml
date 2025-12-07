@@ -72,15 +72,38 @@ jobs:
       - name: Test screenshot service
         id: test_screenshot
         run: |
+          # Create directory on host for screenshots
+          mkdir -p /tmp/screenshots
+          
           # Take a screenshot via API
           curl -s http://localhost:8080/screenshot > /dev/null
+          sleep 2
+          
+          # Debug: List screenshots in container
+          echo "Screenshots in container:"
+          docker exec ibgateway sh -c 'ls -lh /tmp/screenshots/*.png 2>/dev/null || echo "No screenshots found"'
           
           # Extract screenshot filename from container for artifact upload
-          SCREENSHOT_FILENAME=$(docker exec ibgateway sh -c 'ls -t /tmp/screenshots/*.png 2>/dev/null' | head -1 | xargs basename 2>/dev/null || echo "test-screenshot.png")
+          SCREENSHOT_FILENAME=$(docker exec ibgateway sh -c 'ls -t /tmp/screenshots/*.png 2>/dev/null | head -1 | xargs basename 2>/dev/null' || echo "")
+          
+          if [ -z "$SCREENSHOT_FILENAME" ]; then
+            echo "ERROR: No screenshot file found in container"
+            docker exec ibgateway sh -c 'ls -la /tmp/screenshots/ 2>/dev/null || echo "Directory does not exist"'
+            exit 1
+          fi
+          
           echo "screenshot_filename=$SCREENSHOT_FILENAME" >> $GITHUB_OUTPUT
           
           # Copy screenshot from container to host for artifact upload
-          docker cp ibgateway:/tmp/screenshots/$SCREENSHOT_FILENAME /tmp/screenshots/ || true
+          docker cp ibgateway:/tmp/screenshots/$SCREENSHOT_FILENAME /tmp/screenshots/$SCREENSHOT_FILENAME
+          
+          # Verify file was copied
+          if [ ! -f "/tmp/screenshots/$SCREENSHOT_FILENAME" ]; then
+            echo "ERROR: Failed to copy screenshot to host"
+            exit 1
+          fi
+          
+          echo "✓ Screenshot copied successfully: /tmp/screenshots/$SCREENSHOT_FILENAME"
 
       - name: Upload screenshot artifact
         uses: actions/upload-artifact@v4

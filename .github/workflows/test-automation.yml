@@ -84,8 +84,30 @@ jobs:
           mkdir -p /tmp/screenshots
           curl -s http://localhost:${{ matrix.config.screenshot_port }}/screenshot > /dev/null
           sleep 2
-          docker exec ${{ matrix.config.name }} sh -c 'ls -t /tmp/screenshots/*.png 2>/dev/null | head -1' | \
-            xargs -I {} docker cp ${{ matrix.config.name }}:{} /tmp/screenshots/${{ matrix.config.screenshot_filename }} || true
+          
+          # Debug: List screenshots in container
+          echo "Screenshots in container:"
+          docker exec ${{ matrix.config.name }} sh -c 'ls -lh /tmp/screenshots/*.png 2>/dev/null || echo "No screenshots found"'
+          
+          # Extract screenshot path from container
+          SCREENSHOT_PATH=$(docker exec ${{ matrix.config.name }} sh -c 'ls -t /tmp/screenshots/*.png 2>/dev/null | head -1' || echo "")
+          
+          if [ -z "$SCREENSHOT_PATH" ]; then
+            echo "ERROR: No screenshot file found in container"
+            docker exec ${{ matrix.config.name }} sh -c 'ls -la /tmp/screenshots/ 2>/dev/null || echo "Directory does not exist"'
+            exit 1
+          fi
+          
+          # Copy screenshot from container to host
+          docker cp ${{ matrix.config.name }}:$SCREENSHOT_PATH /tmp/screenshots/${{ matrix.config.screenshot_filename }}
+          
+          # Verify file was copied
+          if [ ! -f "/tmp/screenshots/${{ matrix.config.screenshot_filename }}" ]; then
+            echo "ERROR: Failed to copy screenshot to host"
+            exit 1
+          fi
+          
+          echo "✓ Screenshot copied successfully: /tmp/screenshots/${{ matrix.config.screenshot_filename }}"
 
       - name: Verify automation configuration
         run: |
