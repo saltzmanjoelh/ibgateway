@@ -50,49 +50,60 @@ jobs:
           docker run -d \
             --name ibgateway \
             --platform linux/amd64 \
-            -p 5900:5900 \
             -p 8080:8080 \
             ibgateway:latest
-          
-          echo "Waiting for services to start..."
-          sleep 15
 
-      - name: Check container is running
+      - name: Wait for container to be ready
         run: |
-          docker ps | grep ibgateway || exit 1
-          echo "Container is running"
-
-      - name: Check screenshot service is accessible
-        run: |
-          echo "Checking screenshot service health..."
-          for i in {1..30}; do
-            if curl -f -s http://localhost:8080/ > /dev/null 2>&1; then
-              echo "Screenshot service is accessible"
+          echo "Waiting for container to be ready..."
+          for i in {1..120}; do
+            if docker logs ibgateway 2>&1 | grep -q "=== All services ready ==="; then
+              echo "✓ Container is ready"
               break
             fi
-            if [ $i -eq 30 ]; then
-              echo "Screenshot service failed to start"
-              docker logs ibgateway
+            if [ $i -eq 120 ]; then
+              echo "ERROR: Container failed to become ready"
+              docker logs ibgateway 2>&1 | tail -50
               exit 1
             fi
-            echo "Waiting for screenshot service... ($i/30)"
             sleep 2
           done
-
-      - name: Install Python dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-pip
-          pip3 install --no-cache-dir -r requirements.txt
 
       - name: Test screenshot service
         id: test_screenshot
         run: |
-          python3 ibgateway_cli.py test-screenshot-service --container-name ibgateway --port 8080
+          # Create directory on host for screenshots
+          mkdir -p /tmp/screenshots
+          
+          # Take a screenshot via API
+          curl -s http://localhost:8080/screenshot > /dev/null
+          sleep 2
+          
+          # Debug: List screenshots in container
+          echo "Screenshots in container:"
+          docker exec ibgateway sh -c 'ls -lh /tmp/screenshots/*.png 2>/dev/null || echo "No screenshots found"'
           
           # Extract screenshot filename from container for artifact upload
-          SCREENSHOT_FILENAME=$(docker exec ibgateway sh -c 'ls -t /tmp/screenshots/*.png 2>/dev/null' | head -1 | xargs basename 2>/dev/null || echo "test-screenshot.png")
+          SCREENSHOT_FILENAME=$(docker exec ibgateway sh -c 'ls -t /tmp/screenshots/*.png 2>/dev/null | head -1 | xargs basename 2>/dev/null' || echo "")
+          
+          if [ -z "$SCREENSHOT_FILENAME" ]; then
+            echo "ERROR: No screenshot file found in container"
+            docker exec ibgateway sh -c 'ls -la /tmp/screenshots/ 2>/dev/null || echo "Directory does not exist"'
+            exit 1
+          fi
+          
           echo "screenshot_filename=$SCREENSHOT_FILENAME" >> $GITHUB_OUTPUT
+          
+          # Copy screenshot from container to host for artifact upload
+          docker cp ibgateway:/tmp/screenshots/$SCREENSHOT_FILENAME /tmp/screenshots/$SCREENSHOT_FILENAME
+          
+          # Verify file was copied
+          if [ ! -f "/tmp/screenshots/$SCREENSHOT_FILENAME" ]; then
+            echo "ERROR: Failed to copy screenshot to host"
+            exit 1
+          fi
+          
+          echo "✓ Screenshot copied successfully: /tmp/screenshots/$SCREENSHOT_FILENAME"
 
       - name: Upload screenshot artifact
         uses: actions/upload-artifact@v4

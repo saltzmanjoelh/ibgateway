@@ -56,90 +56,14 @@ docker run --platform linux/amd64 \
 
 **Note**: IB Gateway only accepts connections from `127.0.0.1` (localhost). The container uses `socat` to forward external ports 4003 and 4004 to the internal ports 4001 and 4002 respectively. This solves the issue of IB Gateway needing to be configured to support trusted IPs. Ports 4001 and 4002 are internal-only and should not be exposed directly from the container.
 
+## Automation
+
+The image includes Python-based automation for GUI interactions using xdotool. Automation is handled automatically when the container starts, or can be run manually using the CLI tool.
+
 ## Screenshot Service
 
 The screenshot service provides an HTTP API to take and view screenshots of the IB Gateway display.
 
-### API Endpoints
-
-#### Take a Screenshot
-```bash
-curl http://localhost:8080/screenshot
-```
-
-Returns JSON with screenshot information:
-```json
-{
-  "success": true,
-  "screenshot_path": "/tmp/screenshots/screenshot_20240101_120000.png",
-  "filename": "screenshot_20240101_120000.png",
-  "url": "/screenshots/screenshot_20240101_120000.png",
-  "full_url": "http://localhost:8080/screenshots/screenshot_20240101_120000.png"
-}
-```
-
-#### Get Latest Screenshot
-```bash
-curl http://localhost:8080/screenshot/latest
-```
-
-#### List All Screenshots
-```bash
-curl http://localhost:8080/screenshots
-```
-
-#### View a Screenshot Image
-```bash
-# Direct image URL (use in browser or img tag)
-http://localhost:8080/screenshots/screenshot_20240101_120000.png
-```
-
-### Web Interface
-
-Access the screenshot service web interface at:
-```
-http://localhost:8080/
-```
-
-This provides a simple HTML page with API documentation and quick links.
-
-### Usage from Cursor Web Agent
-
-When working on automation scripts, you can:
-
-1. **Take a screenshot**:
-   ```bash
-   curl http://localhost:8080/screenshot
-   ```
-
-2. **Get the latest screenshot URL**:
-   ```bash
-   curl http://localhost:8080/screenshot/latest | jq -r '.full_url'
-   ```
-
-3. **View the screenshot** by opening the returned URL in a browser or using it in markdown:
-   ```markdown
-   ![Screenshot](http://localhost:8080/screenshots/screenshot_20240101_120000.png)
-   ```
-
-### Example: Monitoring Automation
-
-```bash
-# Take screenshot after automation starts
-sleep 5
-SCREENSHOT_URL=$(curl -s http://localhost:8080/screenshot | jq -r '.full_url')
-echo "Screenshot available at: $SCREENSHOT_URL"
-
-# Take periodic screenshots
-while true; do
-  curl -s http://localhost:8080/screenshot > /dev/null
-  sleep 10
-done
-```
-
-## Automation
-
-The image includes Python-based automation for GUI interactions using xdotool. Automation is handled automatically when the container starts, or can be run manually using the CLI tool.
 
 ### IB Gateway Configuration
 
@@ -177,8 +101,6 @@ IB_PASSWORD=your_password
 IB_API_TYPE=IB_API
 IB_TRADING_MODE=PAPER
 ```
-
-**Note**: Environment variables take precedence over `.env` file values. This allows you to override specific values when needed.
 
 #### Examples
 
@@ -249,24 +171,94 @@ docker run --platform linux/amd64 \
 - `IB_API_TYPE`: API type - `FIX` or `IB_API` (default: `IB_API`, can also be set in `.env` file)
 - `IB_TRADING_MODE`: Trading mode - `LIVE` or `PAPER` (default: `PAPER`, can also be set in `.env` file)
 
-**Note**: Environment variables take precedence over values in `.env` file. This allows you to override specific values when needed.
+**Note**: Container environment variables take precedence over `.env` file values. This allows you to override specific values when needed.
 
 ## Python CLI Tool
 
-The repository includes a Python CLI tool (`ibgateway_cli.py`) for automation, testing, and screenshot management. You can use it from the host machine to start the container and perform automations. It's also used within the container when performing automations. 
+The repository includes a Python CLI tool (`ibgateway_cli.py`) for automation, testing, and screenshot management. All commands execute inside the Docker container - no host dependencies required!
 
 ### Installation
 
-Install Python dependencies:
+No installation needed! Just start a container and execute commands using `docker exec`:
+
 ```bash
-pip install -r requirements.txt
+docker run -d --name ibgateway --platform linux/amd64 \
+  -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 \
+  ibgateway:latest
+```
+
+
+#### Take a Screenshot
+```bash
+curl http://localhost:8080/screenshot
+```
+
+Returns JSON with screenshot information:
+```json
+{
+  "success": true,
+  "screenshot_path": "/tmp/screenshots/screenshot_20240101_120000.png",
+  "filename": "screenshot_20240101_120000.png",
+  "url": "/screenshots/screenshot_20240101_120000.png",
+  "full_url": "http://localhost:8080/screenshots/screenshot_20240101_120000.png"
+}
+```
+
+#### Get Latest Screenshot
+```bash
+curl http://localhost:8080/screenshot/latest
+```
+
+**View the screenshot** by opening the returned URL in a browser or using it in markdown:
+```markdown
+![Screenshot](http://localhost:8080/screenshots/screenshot_20240101_120000.png)
+```
+
+Get the url from the cli
+```bash
+curl http://localhost:8080/screenshot/latest | jq -r '.full_url'
+```
+
+#### List All Screenshots
+```bash
+curl http://localhost:8080/screenshots
+```
+
+#### View a Screenshot Image
+```bash
+# Direct image URL (use in browser or img tag)
+http://localhost:8080/screenshots/screenshot_20240101_120000.png
+```
+
+### Web Interface
+
+Access the screenshot service web interface at:
+```
+http://localhost:8080/
+```
+
+This provides a simple HTML page with API documentation and quick links.
+
+### Example: Monitoring Automation
+
+```bash
+# Take screenshot after automation starts
+sleep 5
+SCREENSHOT_URL=$(curl -s http://localhost:8080/screenshot | jq -r '.full_url')
+echo "Screenshot available at: $SCREENSHOT_URL"
+
+# Take periodic screenshots
+while true; do
+  curl -s http://localhost:8080/screenshot > /dev/null
+  sleep 10
+done
 ```
 
 ### Available Commands
 
 **Automate IB Gateway configuration**:
 ```bash
-python3 ibgateway_cli.py automate \
+docker exec ibgateway python3 /ibgateway_cli.py automate \
   --username myusername \
   --password mypassword \
   --api-type IB_API
@@ -274,66 +266,33 @@ python3 ibgateway_cli.py automate \
 
 **Take a screenshot**:
 ```bash
-python3 ibgateway_cli.py screenshot --output /path/to/screenshot.png
+docker exec ibgateway python3 /ibgateway_cli.py screenshot --output /path/to/screenshot.png
 ```
 
 **Start screenshot HTTP server**:
 ```bash
-python3 ibgateway_cli.py screenshot-server --port 8080
+docker exec ibgateway python3 /ibgateway_cli.py screenshot-server --port 8080
 ```
 
 **Compare two screenshots**:
 ```bash
-python3 ibgateway_cli.py compare-screenshots screenshot1.png screenshot2.png
-```
-
-**Test automation** (requires running container):
-```bash
-python3 ibgateway_cli.py test-automation \
-  --container-name ibgateway-test \
-  --api-type IB_API \
-  --trading-mode PAPER \
-  --ci
-```
-
-**Test screenshot service** (requires running container):
-```bash
-python3 ibgateway_cli.py test-screenshot-service \
-  --container-name ibgateway-test \
-  --port 8080
+docker exec ibgateway python3 /ibgateway_cli.py compare-screenshots screenshot1.png screenshot2.png
 ```
 
 ## Testing
 
-### Local Testing
-
-**Test automation** (requires running container):
+**Compare screenshots**:
 ```bash
-# Start container first
-docker run -d --name ibgateway-test --platform linux/amd64 \
+# Start container if not already running
+docker run -d --name ibgateway --platform linux/amd64 \
   -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 \
   ibgateway:latest
 
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Run automation tests
-python3 ibgateway_cli.py test-automation \
-  --container-name ibgateway-test \
-  --api-type IB_API \
-  --trading-mode PAPER
-
-# Test screenshot service
-python3 ibgateway_cli.py test-screenshot-service \
-  --container-name ibgateway-test \
-  --port 8080
+# Compare screenshots
+docker exec ibgateway python3 /ibgateway_cli.py compare-screenshots screenshot1.png screenshot2.png
 ```
 
-**Compare screenshots**:
-```bash
-pip install -r requirements.txt
-python3 ibgateway_cli.py compare-screenshots screenshot1.png screenshot2.png
-```
+**Note**: All CLI commands must be executed inside the container using `docker exec`. Replace `ibgateway` with your container name if different.
 
 ### Automated Testing
 

@@ -101,6 +101,7 @@ class PortForwarder:
             self.log("✓ Port forwarding is active")
             self.log(f"  - Live Trading: 0.0.0.0:{self.forward_live_port} -> 127.0.0.1:{self.live_port}")
             self.log(f"  - Paper Trading: 0.0.0.0:{self.forward_paper_port} -> 127.0.0.1:{self.paper_port}")
+            self.log("=== Port forwarding ready ===")
         else:
             self.log("WARNING: Port forwarding may not be active, check logs")
         

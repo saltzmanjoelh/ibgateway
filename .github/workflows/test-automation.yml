@@ -20,6 +20,20 @@ jobs:
       contents: read
       pull-requests: write
 
+    strategy:
+      matrix:
+        config:
+          - name: ibgateway
+            api_type: IB_API
+            trading_mode: PAPER
+            screenshot_port: 8080
+            screenshot_filename: IB_API_PAPER-screenshot.png
+          - name: ibgateway-fix-live
+            api_type: FIX
+            trading_mode: LIVE
+            screenshot_port: 8081
+            screenshot_filename: FIX_LIVE-screenshot.png
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,49 +53,90 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Install Python dependencies
+      - name: Start container
         run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-pip
-          pip3 install --no-cache-dir -r requirements.txt
+          docker run -d \
+            --name ${{ matrix.config.name }} \
+            --platform linux/amd64 \
+            -p ${{ matrix.config.screenshot_port }}:8080 \
+            -e IB_API_TYPE=${{ matrix.config.api_type }} \
+            -e IB_TRADING_MODE=${{ matrix.config.trading_mode }} \
+            ibgateway:latest
 
-      - name: Test automation - Default (IB_API + PAPER)
-        id: test_default
+      - name: Wait for container to be ready
         run: |
-          python3 ibgateway_cli.py test-automation \
-            --container-name ibgateway \
-            --api-type IB_API \
-            --trading-mode PAPER \
-            --ci
+          echo "Waiting for container to be ready..."
+          for i in {1..120}; do
+            if docker logs ${{ matrix.config.name }} 2>&1 | grep -q "=== All services ready ==="; then
+              echo "✓ Container is ready"
+              break
+            fi
+            if [ $i -eq 120 ]; then
+              echo "ERROR: Container failed to become ready"
+              docker logs ${{ matrix.config.name }} 2>&1 | tail -50
+              exit 1
+            fi
+            sleep 2
+          done
 
-      - name: Test automation - FIX + LIVE
-        id: test_fix_live
+      - name: Take verification screenshot
         run: |
-          python3 ibgateway_cli.py test-automation \
-            --container-name ibgateway-fix-live \
-            --api-type FIX \
-            --trading-mode LIVE \
-            --ci
+          mkdir -p /tmp/screenshots
+          curl -s http://localhost:${{ matrix.config.screenshot_port }}/screenshot > /dev/null
+          sleep 2
+          
+          # Debug: List screenshots in container
+          echo "Screenshots in container:"
+          docker exec ${{ matrix.config.name }} sh -c 'ls -lh /tmp/screenshots/*.png 2>/dev/null || echo "No screenshots found"'
+          
+          # Extract screenshot path from container
+          SCREENSHOT_PATH=$(docker exec ${{ matrix.config.name }} sh -c 'ls -t /tmp/screenshots/*.png 2>/dev/null | head -1' || echo "")
+          
+          if [ -z "$SCREENSHOT_PATH" ]; then
+            echo "ERROR: No screenshot file found in container"
+            docker exec ${{ matrix.config.name }} sh -c 'ls -la /tmp/screenshots/ 2>/dev/null || echo "Directory does not exist"'
+            exit 1
+          fi
+          
+          # Copy screenshot from container to host
+          docker cp ${{ matrix.config.name }}:$SCREENSHOT_PATH /tmp/screenshots/${{ matrix.config.screenshot_filename }}
+          
+          # Verify file was copied
+          if [ ! -f "/tmp/screenshots/${{ matrix.config.screenshot_filename }}" ]; then
+            echo "ERROR: Failed to copy screenshot to host"
+            exit 1
+          fi
+          
+          echo "✓ Screenshot copied successfully: /tmp/screenshots/${{ matrix.config.screenshot_filename }}"
+
+      - name: Verify automation configuration
+        run: |
+          logs=$(docker logs ${{ matrix.config.name }} 2>&1)
+          if echo "$logs" | grep -i "${{ matrix.config.api_type }}" > /dev/null && \
+             echo "$logs" | grep -i "${{ matrix.config.trading_mode }}" > /dev/null; then
+            echo "✓ Configuration verified (${{ matrix.config.api_type }} + ${{ matrix.config.trading_mode }})"
+          else
+            echo "✗ Configuration verification failed"
+            exit 1
+          fi
 
       - name: Upload automation test screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: automation-test-screenshots
-          path: /tmp/screenshots/*.png
+          name: automation-test-screenshots-${{ matrix.config.name }}
+          path: /tmp/screenshots/${{ matrix.config.screenshot_filename }}
           retention-days: 7
-          if-no-files-found: error
+          if-no-files-found: ignore
 
       - name: Show container logs on failure
         if: failure()
         run: |
-          echo "=== Container logs (if any containers exist) ==="
-          docker ps -a || true
-          docker logs ibgateway 2>&1 | tail -50 || true
-          docker logs ibgateway-fix-live 2>&1 | tail -50 || true
+          echo "=== Container logs ==="
+          docker logs ${{ matrix.config.name }} 2>&1 | tail -50 || true
 
       - name: Cleanup
         if: always()
         run: |
-          docker stop ibgateway ibgateway-fix-live 2>/dev/null || true
-          docker rm ibgateway ibgateway-fix-live 2>/dev/null || true
+          docker stop ${{ matrix.config.name }} 2>/dev/null || true
+          docker rm ${{ matrix.config.name }} 2>/dev/null || true
