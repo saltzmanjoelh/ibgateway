@@ -1,5 +1,18 @@
 {
     "version": "2.0.0",
+    "inputs": [
+        {
+            "id": "username",
+            "description": "IB Gateway Username",
+            "type": "promptString"
+        },
+        {
+            "id": "password",
+            "description": "IB Gateway Password",
+            "type": "promptString",
+            "password": true
+        }
+    ],
     "tasks": [
         {
             "label": "Docker Build (linux/amd64)",
@@ -22,7 +35,7 @@
         {
             "label": "Docker Run",
             "type": "shell",
-            "command": "docker run --platform linux/amd64 -v $(pwd)/.env:/.env -v $(pwd)/ibgateway:/ibgateway -v $(pwd)/ibgateway_cli.py:/ibgateway_cli.py -v $(pwd)/requirements.txt:/requirements.txt -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 -it --rm ibgateway",
+            "command": "docker run --platform linux/amd64 -v $(pwd)/.env:/.env -v $(pwd)/ibgateway:/ibgateway -v $(pwd)/ibgateway_cli.py:/ibgateway_cli.py -v $(pwd)/requirements.txt:/requirements.txt -e IB_USERNAME=${input:username} -e IB_PASSWORD=${input:password} -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 -it --rm ibgateway",
             "group": "test",
             "presentation": {
                 "echo": true,

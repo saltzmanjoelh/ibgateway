@@ -136,7 +136,7 @@ class AutomationHandler:
             return
         
         self.log("=== Typing Username ===")
-        self.run_xdotool("type", "--window", window_id, "--delay", "50", self.config.username)
+        self.run_xdotool("type", "--delay", "50", self.config.username)
         time.sleep(0.5)
         self.log("✓ Username typed")
     
@@ -147,9 +147,9 @@ class AutomationHandler:
             return
         
         self.log("=== Typing Password ===")
-        self.run_xdotool("key", "--window", window_id, "Tab")
+        self.run_xdotool("key", "Tab")
         time.sleep(0.3)
-        self.run_xdotool("type", "--window", window_id, "--delay", "50", self.config.password)
+        self.run_xdotool("type", "--delay", "50", self.config.password)
         time.sleep(0.5)
         self.log("✓ Password typed")
     
