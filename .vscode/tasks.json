@@ -81,7 +81,7 @@
             "problemMatcher": []
         },
         {
-            "label": "Docker: Automate",
+            "label": "Run Automate",
             "type": "shell",
             "command": "docker exec $(docker ps -q -f ancestor=ibgateway) python3 /ibgateway_cli.py automate",
             "group": "test",
@@ -129,6 +129,36 @@
             "label": "Download Latest Screenshot",
             "type": "shell",
             "command": "RESPONSE=$(curl -s http://localhost:8080/screenshot/latest) && URL=$(echo \"$RESPONSE\" | jq -r '.full_url') && FILENAME=$(echo \"$RESPONSE\" | jq -r '.filename') && echo \"Downloading: $URL\" && curl -s \"$URL\" -o \"$FILENAME\" && echo \"Saved to: $FILENAME\"",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Compare Test Screenshot",
+            "type": "shell",
+            "command": "./scripts/compare-test-screenshot.sh",
+            "group": "test",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Remove Container",
+            "type": "shell",
+            "command": "CONTAINER_ID=$(docker ps -q -f ancestor=ibgateway) && if [ -z \"$CONTAINER_ID\" ]; then echo \"No running container found\"; else docker rm -f $CONTAINER_ID && echo \"Container removed: $CONTAINER_ID\"; fi",
             "group": "test",
             "presentation": {
                 "echo": true,

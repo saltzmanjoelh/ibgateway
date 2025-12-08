@@ -193,7 +193,7 @@ class IBGatewayCLI:
                 print()
                 
                 if result['has_changes']:
-                    print("✓ Images are different (changes detected)")
+                    print("X Images are different (changes detected)")
                     if result['is_similar']:
                         print("  Note: Changes are relatively small")
                     else:
