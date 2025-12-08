@@ -109,6 +109,70 @@ jobs:
           
           echo "✓ Screenshot copied successfully: /tmp/screenshots/${{ matrix.config.screenshot_filename }}"
 
+      - name: Compare screenshots with baseline
+        run: |
+          BASELINE_PATH="tests/baseline_screenshots/${{ matrix.config.screenshot_filename }}"
+          CURRENT_PATH="/tmp/screenshots/${{ matrix.config.screenshot_filename }}"
+          
+          echo "=== Screenshot Comparison ==="
+          echo "Current screenshot: $CURRENT_PATH"
+          echo "Baseline screenshot: $BASELINE_PATH"
+          
+          if [ ! -f "$BASELINE_PATH" ]; then
+            echo "WARNING: Baseline screenshot not found: $BASELINE_PATH"
+            echo "This is expected on first run. Skipping comparison."
+            echo "To create baseline screenshots, run the tests and copy the artifacts to tests/baseline_screenshots/"
+            exit 0
+          fi
+          
+          # Copy screenshots into container for comparison
+          docker cp "$CURRENT_PATH" ${{ matrix.config.name }}:/tmp/current.png
+          docker cp "$BASELINE_PATH" ${{ matrix.config.name }}:/tmp/baseline.png
+          
+          # Run comparison using the CLI tool
+          echo "Running screenshot comparison..."
+          if docker exec ${{ matrix.config.name }} python3 /ibgateway_cli.py compare-screenshots /tmp/baseline.png /tmp/current.png --threshold 0.05; then
+            # Check if comparison indicates similarity
+            # The CLI returns 0 for different, 1 for similar (backwards from normal)
+            # So we need to check the output or use a wrapper script
+            echo "Comparison completed. Checking results..."
+            
+            # Use Python script for better control
+            docker exec ${{ matrix.config.name }} python3 << 'EOF'
+import sys
+sys.path.insert(0, '/')
+from ibgateway.cli import IBGatewayCLI
+from PIL import Image, ImageChops, ImageStat
+import numpy as np
+
+cli = IBGatewayCLI()
+result = cli._compare_images_pil('/tmp/baseline.png', '/tmp/current.png', 0.05)
+
+if result is None:
+    print("ERROR: Could not compare images")
+    sys.exit(1)
+
+is_similar = result['is_similar']
+diff_percentage = result['diff_percentage']
+
+print(f"Mean pixel difference: {result['mean_diff']:.2f}")
+print(f"Different pixels: {diff_percentage:.2f}%")
+
+# Consider similar if mean diff is below threshold AND different pixels < 5%
+if is_similar and diff_percentage < 5.0:
+    print("✓ Screenshots are similar (within acceptable range)")
+    sys.exit(0)
+else:
+    print("✗ Screenshots differ significantly")
+    print(f"  Mean diff threshold: {255 * 0.05:.2f}, actual: {result['mean_diff']:.2f}")
+    print(f"  Different pixels: {diff_percentage:.2f}% (threshold: 5%)")
+    sys.exit(1)
+EOF
+          else
+            echo "ERROR: Screenshot comparison failed"
+            exit 1
+          fi
+
       - name: Verify automation configuration
         run: |
           logs=$(docker logs ${{ matrix.config.name }} 2>&1)

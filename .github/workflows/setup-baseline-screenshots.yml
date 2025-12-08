@@ -1,0 +1,107 @@
+name: Setup Baseline Screenshots
+
+on:
+  workflow_run:
+    workflows: ["Test Automation"]
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      workflow_run_id:
+        description: 'Workflow run ID to download artifacts from (leave empty for latest)'
+        required: false
+        type: string
+
+jobs:
+  download-and-commit-baselines:
+    runs-on: ubuntu-latest
+    if: |
+      (github.event.workflow_run.conclusion == 'success' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine workflow run ID
+        id: workflow_run
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.workflow_run_id }}" ]; then
+            echo "run_id=${{ github.event.inputs.workflow_run_id }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" == "workflow_run" ]; then
+            echo "run_id=${{ github.event.workflow_run.id }}" >> $GITHUB_OUTPUT
+          else
+            # Get latest successful run using GitHub API
+            RUN_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/test-automation.yml/runs?status=success&per_page=1" \
+              | grep -o '"id":[0-9]*' | head -1 | cut -d':' -f2)
+            echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+          fi
+          echo "Using workflow run ID: ${{ steps.workflow_run.outputs.run_id }}"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ steps.workflow_run.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pattern: automation-test-screenshots-*
+          merge-multiple: false
+
+      - name: Setup baseline screenshots
+        run: |
+          mkdir -p tests/baseline_screenshots
+          
+          # Check if baselines already exist
+          EXISTING_BASELINES=$(ls tests/baseline_screenshots/*.png 2>/dev/null | wc -l || echo "0")
+          
+          if [ "$EXISTING_BASELINES" -gt 0 ]; then
+            echo "Baseline screenshots already exist. Skipping setup."
+            echo "Existing baselines:"
+            ls -lh tests/baseline_screenshots/*.png
+            exit 0
+          fi
+          
+          # Find and copy screenshots
+          FOUND_SCREENSHOTS=0
+          for artifact_dir in automation-test-screenshots-*; do
+            if [ -d "$artifact_dir" ]; then
+              for screenshot in "$artifact_dir"/*.png; do
+                if [ -f "$screenshot" ]; then
+                  filename=$(basename "$screenshot")
+                  echo "Copying $filename to baseline_screenshots/"
+                  cp "$screenshot" "tests/baseline_screenshots/$filename"
+                  FOUND_SCREENSHOTS=$((FOUND_SCREENSHOTS + 1))
+                fi
+              done
+            fi
+          done
+          
+          if [ "$FOUND_SCREENSHOTS" -eq 0 ]; then
+            echo "WARNING: No screenshots found in artifacts"
+            exit 1
+          fi
+          
+          # List what we found
+          echo "Baseline screenshots created:"
+          ls -lh tests/baseline_screenshots/
+
+      - name: Commit baseline screenshots
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          # Check if there are new files to commit
+          git add tests/baseline_screenshots/*.png
+          
+          if git diff --staged --quiet; then
+            echo "No new baseline screenshots to commit"
+          else
+            git commit -m "Add baseline screenshots from test run ${{ steps.workflow_run.outputs.run_id }}"
+            git push
+            echo "✓ Baseline screenshots committed and pushed"
+          fi
