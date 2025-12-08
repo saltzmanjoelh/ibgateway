@@ -111,8 +111,9 @@ wait_for_automation() {
 wait_for_port_forwarding() {
     echo "Waiting for port forwarding to be ready..."
     for i in {1..30}; do
-        if (netstat -tlnp 2>/dev/null | grep -q ":4003 " && netstat -tlnp 2>/dev/null | grep -q ":4004 ") || \
-           (ss -tlnp 2>/dev/null | grep -q ":4003 " && ss -tlnp 2>/dev/null | grep -q ":4004 "); then
+        # Run netstat/ss once per iteration and check both ports in the output
+        output=$(netstat -tlnp 2>/dev/null || ss -tlnp 2>/dev/null)
+        if echo "$output" | grep -q ":4003 " && echo "$output" | grep -q ":4004 "; then
             echo "✓ Port forwarding is ready"
             return 0
         fi

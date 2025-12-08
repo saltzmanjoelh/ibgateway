@@ -23,9 +23,3 @@ Thumbs.db
 
 # Docker
 *.log
-
-# Test artifacts
-screenshots/
-test-screenshots/
-/tmp/test-screenshots/
-

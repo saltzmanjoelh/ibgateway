@@ -35,7 +35,7 @@
         {
             "label": "Docker Run",
             "type": "shell",
-            "command": "docker run --platform linux/amd64 -v $(pwd)/.env:/.env -v $(pwd)/ibgateway:/ibgateway -v $(pwd)/ibgateway_cli.py:/ibgateway_cli.py -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 -it --rm ibgateway",
+            "command": "docker run --name ibgateway --platform linux/amd64 -v $(pwd)/.env:/.env -v $(pwd)/ibgateway:/ibgateway -v $(pwd)/ibgateway_cli.py:/ibgateway_cli.py -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 -it --rm ibgateway",
             "group": "test",
             "presentation": {
                 "echo": true,
@@ -81,9 +81,9 @@
             "problemMatcher": []
         },
         {
-            "label": "CLI: Automate",
+            "label": "Docker: Automate",
             "type": "shell",
-            "command": "python3 ibgateway_cli.py automate",
+            "command": "docker exec $(docker ps -q -f ancestor=ibgateway) python3 /ibgateway_cli.py automate",
             "group": "test",
             "presentation": {
                 "echo": true,
@@ -96,9 +96,9 @@
             "problemMatcher": []
         },
         {
-            "label": "CLI: Screenshot",
+            "label": "Docker: Screenshot",
             "type": "shell",
-            "command": "python3 ibgateway_cli.py screenshot",
+            "command": "docker exec $(docker ps -q -f ancestor=ibgateway) python3 /ibgateway_cli.py screenshot",
             "group": "test",
             "presentation": {
                 "echo": true,
@@ -111,9 +111,9 @@
             "problemMatcher": []
         },
         {
-            "label": "CLI: Screenshot Server",
+            "label": "Take Screenshot (HTTP API)",
             "type": "shell",
-            "command": "python3 ibgateway_cli.py screenshot-server --port 8080",
+            "command": "RESPONSE=$(curl -s http://localhost:8080/screenshot) && echo \"$RESPONSE\" | jq -r '\"Screenshot URL: \" + .full_url' && echo \"\" && echo \"$RESPONSE\" | jq",
             "group": "test",
             "presentation": {
                 "echo": true,
@@ -126,24 +126,9 @@
             "problemMatcher": []
         },
         {
-            "label": "CLI: Test Automation",
+            "label": "Download Latest Screenshot",
             "type": "shell",
-            "command": "python3 ibgateway_cli.py test-automation",
-            "group": "test",
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared",
-                "showReuseMessage": true,
-                "clear": false
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "CLI: Test Screenshot Service",
-            "type": "shell",
-            "command": "python3 ibgateway_cli.py test-screenshot-service",
+            "command": "RESPONSE=$(curl -s http://localhost:8080/screenshot/latest) && URL=$(echo \"$RESPONSE\" | jq -r '.full_url') && FILENAME=$(echo \"$RESPONSE\" | jq -r '.filename') && echo \"Downloading: $URL\" && curl -s \"$URL\" -o \"$FILENAME\" && echo \"Saved to: $FILENAME\"",
             "group": "test",
             "presentation": {
                 "echo": true,
