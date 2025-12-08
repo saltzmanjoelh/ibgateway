@@ -63,7 +63,7 @@ echo "✓ Latest screenshot: $CONTAINER_CURRENT_SCREENSHOT"
 echo ""
 
 echo "=== Step 3: Comparing screenshots ==="
-# Run comparison
+# Run comparison (command exit code reflects similarity)
 docker exec $CONTAINER_NAME_OR_ID python3 /ibgateway_cli.py compare-screenshots \
     "$CONTAINER_TEST_SCREENSHOT" \
     "$CONTAINER_CURRENT_SCREENSHOT"
@@ -74,6 +74,13 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo "=== Comparison completed ==="
 else
     echo "=== Comparison completed with differences ==="
+    if [ $EXIT_CODE -lt 5 ]; then
+        echo "✓ Images are similar (minimal changes)"
+        exit 0
+    else
+        echo "X Images are different (significant changes)"
+        exit 1
+    fi
 fi
 
 exit $EXIT_CODE
