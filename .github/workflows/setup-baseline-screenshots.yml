@@ -16,7 +16,7 @@ jobs:
   download-and-commit-baselines:
     runs-on: ubuntu-latest
     if: |
-      (github.event.workflow_run.conclusion == 'success' && github.ref == 'refs/heads/main') ||
+      github.event.workflow_run.conclusion == 'success' ||
       github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
@@ -101,7 +101,16 @@ jobs:
           if git diff --staged --quiet; then
             echo "No new baseline screenshots to commit"
           else
-            git commit -m "Add baseline screenshots from test run ${{ steps.workflow_run.outputs.run_id }}"
-            git push
-            echo "✓ Baseline screenshots committed and pushed"
+            # Only commit on main branch, otherwise just show what would be committed
+            if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+              git commit -m "Add baseline screenshots from test run ${{ steps.workflow_run.outputs.run_id }}"
+              git push
+              echo "✓ Baseline screenshots committed and pushed to main"
+            else
+              echo "Baseline screenshots ready (on branch ${{ github.ref }}, not committing to non-main branch)"
+              echo "To commit these baselines, merge this branch to main or manually commit:"
+              echo "  git add tests/baseline_screenshots/*.png"
+              echo "  git commit -m 'Add baseline screenshots'"
+              echo "  git push"
+            fi
           fi
