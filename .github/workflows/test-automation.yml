@@ -79,36 +79,6 @@ jobs:
             sleep 2
           done
 
-      - name: Take verification screenshot
-        run: |
-          mkdir -p /tmp/screenshots
-          curl -s http://localhost:${{ matrix.config.screenshot_port }}/screenshot > /dev/null
-          sleep 2
-          
-          # Debug: List screenshots in container
-          echo "Screenshots in container:"
-          docker exec ${{ matrix.config.name }} sh -c 'ls -lh /tmp/screenshots/*.png 2>/dev/null || echo "No screenshots found"'
-          
-          # Extract screenshot path from container
-          SCREENSHOT_PATH=$(docker exec ${{ matrix.config.name }} sh -c 'ls -t /tmp/screenshots/*.png 2>/dev/null | head -1' || echo "")
-          
-          if [ -z "$SCREENSHOT_PATH" ]; then
-            echo "ERROR: No screenshot file found in container"
-            docker exec ${{ matrix.config.name }} sh -c 'ls -la /tmp/screenshots/ 2>/dev/null || echo "Directory does not exist"'
-            exit 1
-          fi
-          
-          # Copy screenshot from container to host
-          docker cp ${{ matrix.config.name }}:$SCREENSHOT_PATH /tmp/screenshots/${{ matrix.config.screenshot_filename }}
-          
-          # Verify file was copied
-          if [ ! -f "/tmp/screenshots/${{ matrix.config.screenshot_filename }}" ]; then
-            echo "ERROR: Failed to copy screenshot to host"
-            exit 1
-          fi
-          
-          echo "✓ Screenshot copied successfully: /tmp/screenshots/${{ matrix.config.screenshot_filename }}"
-
       - name: Verify automation configuration
         run: |
           logs=$(docker logs ${{ matrix.config.name }} 2>&1)
@@ -119,6 +89,37 @@ jobs:
             echo "✗ Configuration verification failed"
             exit 1
           fi
+
+      - name: Compare test screenshot
+        if: >
+          (matrix.config.api_type == 'IB_API' && matrix.config.trading_mode == 'PAPER') ||
+          (matrix.config.api_type == 'FIX' && matrix.config.trading_mode == 'LIVE')
+        run: |
+          chmod +x scripts/compare-test-screenshot.sh
+          TEST_SHOT="test-screenshots/ibapi-paper.png"
+          if [ "${{ matrix.config.api_type }}" = "FIX" ] && [ "${{ matrix.config.trading_mode }}" = "LIVE" ]; then
+            TEST_SHOT="test-screenshots/fix-live.png"
+          fi
+          ./scripts/compare-test-screenshot.sh ${{ matrix.config.name }} ${{ matrix.config.screenshot_port }} "$TEST_SHOT"
+
+      - name: Download comparison screenshot
+        run: |
+          mkdir -p /tmp/screenshots
+          RESPONSE=$(curl -s http://localhost:${{ matrix.config.screenshot_port }}/screenshot/latest)
+          FILEPATH=$(echo "$RESPONSE" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('screenshot_path',''))")
+          if [ -z "$FILEPATH" ]; then
+            echo "ERROR: No screenshot file found via API"
+            echo "$RESPONSE"
+            exit 1
+          fi
+          docker cp ${{ matrix.config.name }}:$FILEPATH /tmp/screenshots/${{ matrix.config.screenshot_filename }}
+          
+          if [ ! -f "/tmp/screenshots/${{ matrix.config.screenshot_filename }}" ]; then
+            echo "ERROR: Failed to copy comparison screenshot to host"
+            exit 1
+          fi
+          
+          echo "✓ Comparison screenshot copied to host: /tmp/screenshots/${{ matrix.config.screenshot_filename }}"
 
       - name: Upload automation test screenshots
         if: always()

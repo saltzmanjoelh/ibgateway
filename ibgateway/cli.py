@@ -193,7 +193,7 @@ class IBGatewayCLI:
                 print()
                 
                 if result['has_changes']:
-                    print("✓ Images are different (changes detected)")
+                    print("X Images are different (changes detected)")
                     if result['is_similar']:
                         print("  Note: Changes are relatively small")
                     else:
@@ -201,7 +201,7 @@ class IBGatewayCLI:
                     return 0
                 else:
                     print("⚠ Images are very similar (minimal changes)")
-                    return 1
+                    return round(result['mean_diff'])
         else:
             print("WARNING: PIL/Pillow not available. Install for detailed comparison:")
             print("  pip install Pillow")
