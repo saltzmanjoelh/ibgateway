@@ -120,6 +120,12 @@ jobs:
             exit 1
           fi
 
+      - name: Compare test screenshot
+        if: matrix.config.api_type == 'IB_API' && matrix.config.trading_mode == 'PAPER'
+        run: |
+          chmod +x scripts/compare-test-screenshot.sh
+          ./scripts/compare-test-screenshot.sh ${{ matrix.config.name }} ${{ matrix.config.screenshot_port }}
+
       - name: Upload automation test screenshots
         if: always()
         uses: actions/upload-artifact@v4
