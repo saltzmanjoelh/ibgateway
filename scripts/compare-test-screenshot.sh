@@ -1,12 +1,13 @@
 #!/bin/bash
 # Script to compare test screenshot with current container screenshot
-# Usage: ./compare-test-screenshot.sh [CONTAINER_NAME_OR_ID] [PORT]
+# Usage: ./compare-test-screenshot.sh [CONTAINER_NAME_OR_ID] [PORT] [TEST_SCREENSHOT]
 
 set -e
 
 # Accept optional parameters
 CONTAINER_NAME_OR_ID="$1"
 SCREENSHOT_PORT="${2:-8080}"
+TEST_SCREENSHOT="${3:-test-screenshots/ibapi-paper.png}"
 
 # Find the running container if not provided
 if [ -z "$CONTAINER_NAME_OR_ID" ]; then
@@ -23,18 +24,18 @@ echo "Using container: $CONTAINER_NAME_OR_ID"
 echo "Using screenshot port: $SCREENSHOT_PORT"
 echo ""
 
-# Test screenshot path (host)
-TEST_SCREENSHOT="test-screenshots/ibapi-paper.png"
-
 # Check if test screenshot exists
 if [ ! -f "$TEST_SCREENSHOT" ]; then
     echo "ERROR: Test screenshot not found: $TEST_SCREENSHOT"
     exit 1
 fi
 
+# Container file name derived from the provided test screenshot
+TEST_SCREENSHOT_BASENAME=$(basename "$TEST_SCREENSHOT")
+
 # Container paths
 CONTAINER_TEST_DIR="/tmp/screenshots"
-CONTAINER_TEST_SCREENSHOT="$CONTAINER_TEST_DIR/ibapi-paper.png"
+CONTAINER_TEST_SCREENSHOT="$CONTAINER_TEST_DIR/$TEST_SCREENSHOT_BASENAME"
 
 echo "=== Step 1: Copying test screenshot into container ==="
 # Create directory in container if it doesn't exist

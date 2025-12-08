@@ -121,10 +121,16 @@ jobs:
           fi
 
       - name: Compare test screenshot
-        if: matrix.config.api_type == 'IB_API' && matrix.config.trading_mode == 'PAPER'
+        if: >
+          (matrix.config.api_type == 'IB_API' && matrix.config.trading_mode == 'PAPER') ||
+          (matrix.config.api_type == 'FIX' && matrix.config.trading_mode == 'LIVE')
         run: |
           chmod +x scripts/compare-test-screenshot.sh
-          ./scripts/compare-test-screenshot.sh ${{ matrix.config.name }} ${{ matrix.config.screenshot_port }}
+          TEST_SHOT="test-screenshots/ibapi-paper.png"
+          if [ "${{ matrix.config.api_type }}" = "FIX" ] && [ "${{ matrix.config.trading_mode }}" = "LIVE" ]; then
+            TEST_SHOT="test-screenshots/fix-live.png"
+          fi
+          ./scripts/compare-test-screenshot.sh ${{ matrix.config.name }} ${{ matrix.config.screenshot_port }} "$TEST_SHOT"
 
       - name: Upload automation test screenshots
         if: always()
