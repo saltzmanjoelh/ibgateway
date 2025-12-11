@@ -13,10 +13,9 @@ from .config import Config
 class AutomationHandler:
     """Handles IB Gateway GUI automation using xdotool."""
     
-    def __init__(self, config: Config, verbose: bool = False, test_mode: bool = False):
+    def __init__(self, config: Config, verbose: bool = False):
         self.config = config
         self.verbose = verbose
-        self.test_mode = test_mode or os.getenv("AUTOMATION_TEST_MODE", "").lower() == "true"
         
         # Button coordinates (relative to content window)
         self.FIX_BUTTON_X = 311
@@ -37,27 +36,6 @@ class AutomationHandler:
     
     def run_xdotool(self, *args) -> Optional[str]:
         """Run xdotool command and return output."""
-        if self.test_mode:
-            # In test mode, simulate xdotool behavior
-            cmd_str = " ".join(str(a) for a in args)
-            self.log(f"[TEST MODE] Simulating xdotool: {cmd_str}")
-            
-            # Simulate window search results
-            if "search" in args and "--name" in args:
-                # Simulate finding IB Gateway window
-                if "IBKR Gateway" in args:
-                    return "12345"  # Mock window ID
-                return None
-            elif "search" in args and "--all" in args:
-                # Simulate listing all windows
-                return "12345\n67890"
-            elif "getwindowname" in args:
-                return "IBKR Gateway"
-            elif "getwindowclassname" in args:
-                return "IBGateway"
-            # For other commands, return success
-            return ""
-        
         cmd = ["xdotool"] + list(args)
         env = os.environ.copy()
         env["DISPLAY"] = self.config.display
@@ -72,11 +50,6 @@ class AutomationHandler:
             if result.returncode == 0:
                 return result.stdout.strip()
             return None
-        except FileNotFoundError:
-            if not self.test_mode:
-                self.log(f"ERROR: xdotool not found. Install with: apt-get install xdotool")
-                self.log(f"       Or set AUTOMATION_TEST_MODE=true for test mode")
-            return None
         except subprocess.TimeoutExpired:
             self.log(f"Timeout running: {' '.join(cmd)}")
             return None
@@ -86,10 +59,6 @@ class AutomationHandler:
     
     def find_ibgateway_window(self, timeout: int = 60) -> Optional[str]:
         """Find IB Gateway window using multiple search methods."""
-        if self.test_mode:
-            self.log("[TEST MODE] Simulating IB Gateway window found")
-            return "12345"  # Mock window ID
-        
         self.log("Waiting for IB Gateway window to appear...")
         
         elapsed = 0

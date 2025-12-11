@@ -55,7 +55,6 @@ class IBGatewayCLI:
         automate_parser.add_argument("--password", help="IB Gateway password (overrides env var)")
         automate_parser.add_argument("--api-type", choices=["FIX", "IB_API"], help="API type (overrides env var)")
         automate_parser.add_argument("--trading-mode", choices=["LIVE", "PAPER"], help="Trading mode (overrides env var)")
-        automate_parser.add_argument("--test-mode", action="store_true", help="Run in test mode (no actual GUI interaction)")
         
         # screenshot subcommand
         screenshot_parser = subparsers.add_parser("screenshot", help="Take a screenshot")
@@ -106,8 +105,7 @@ class IBGatewayCLI:
         
         # Route to appropriate handler
         if parsed_args.command == "automate":
-            test_mode = getattr(parsed_args, "test_mode", False) or os.getenv("AUTOMATION_TEST_MODE", "").lower() == "true"
-            handler = AutomationHandler(self.config, verbose, test_mode=test_mode)
+            handler = AutomationHandler(self.config, verbose)
             return handler.automate()
         
         elif parsed_args.command == "screenshot":
