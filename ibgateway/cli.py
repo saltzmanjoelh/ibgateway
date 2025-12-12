@@ -72,6 +72,11 @@ class IBGatewayCLI:
         
         # install subcommand
         install_parser = subparsers.add_parser("install", help="Install IB Gateway")
+        install_parser.add_argument(
+            "--latest",
+            action="store_true",
+            help="Use latest version instead of stable (default: stable)"
+        )
         
         # run subcommand
         run_parser = subparsers.add_parser("run", help="Run IB Gateway")
@@ -125,7 +130,8 @@ class IBGatewayCLI:
             )
         
         elif parsed_args.command == "install":
-            return self._install_ibgateway(verbose)
+            use_latest = getattr(parsed_args, "latest", False)
+            return self._install_ibgateway(verbose, use_latest)
         
         elif parsed_args.command == "run":
             return self._run_ibgateway(verbose)
@@ -259,11 +265,17 @@ class IBGatewayCLI:
             print(f"ERROR comparing images: {e}")
             return None
     
-    def _install_ibgateway(self, verbose: bool) -> int:
-        """Install IB Gateway."""
-        print("=== Starting IB Gateway installation ===")
+    def _install_ibgateway(self, verbose: bool, use_latest: bool = False) -> int:
+        """Install IB Gateway.
         
-        installer_url = "https://download2.interactivebrokers.com/installers/ibgateway/latest-standalone/ibgateway-latest-standalone-linux-x64.sh"
+        Args:
+            verbose: Enable verbose output
+            use_latest: If True, use latest version; if False, use stable (default)
+        """
+        version = "latest" if use_latest else "stable"
+        print(f"=== Starting IB Gateway installation ({version} version) ===")
+        
+        installer_url = f"https://download2.interactivebrokers.com/installers/ibgateway/{version}-standalone/ibgateway-{version}-standalone-linux-x64.sh"
         installer_path = "/tmp/install-ibgateway.sh"
         log_path = "/tmp/install-ibgateway.log"
         
