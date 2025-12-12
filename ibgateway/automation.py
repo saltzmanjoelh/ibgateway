@@ -152,6 +152,7 @@ class AutomationHandler:
         self.run_xdotool("type", "--delay", "50", self.config.password)
         time.sleep(0.5)
         self.log("✓ Password typed")
+        self.run_xdotool("key", "Return")
     
     def list_all_windows(self):
         """List all windows with their IDs and names."""
