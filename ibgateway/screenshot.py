@@ -119,7 +119,7 @@ def compare_images_pil(
         max_diff_percentage: Max percentage of pixels that may differ
 
     Returns:
-        Dict containing mean_diff, max_diff, diff_percentage, is_match
+        Dict containing mean_diff, max_diff, diff_percentage, is_similar, has_changes, is_match
     """
     if not HAS_PIL:
         raise RuntimeError("Pillow is required for image comparison (install Pillow).")
@@ -148,12 +148,16 @@ def compare_images_pil(
     different_pixels = total_pixels - zero_pixels
     diff_percentage = (different_pixels / total_pixels) * 100 if total_pixels else 0.0
 
-    is_match = (mean_diff < (255.0 * threshold)) and (diff_percentage <= max_diff_percentage)
+    is_similar = mean_diff < (255.0 * threshold)
+    has_changes = diff_percentage > max_diff_percentage
+    is_match = is_similar and (not has_changes)
 
     return {
         "mean_diff": mean_diff,
         "max_diff": max_diff,
         "diff_percentage": diff_percentage,
+        "is_similar": is_similar,
+        "has_changes": has_changes,
         "is_match": is_match,
     }
 
