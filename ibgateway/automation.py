@@ -5,9 +5,11 @@ IB Gateway GUI automation handler using xdotool.
 import os
 import subprocess
 import time
+from pathlib import Path
 from typing import Optional
 
 from .config import Config
+from .screenshot import ScreenshotHandler, compare_images_pil
 
 
 class AutomationHandler:
@@ -179,6 +181,59 @@ class AutomationHandler:
         self.run_xdotool("windowmove", window_id, "0", "0")
         time.sleep(0.5)
         self.log("✓ Window moved to top-left corner")
+
+    def _expected_state_screenshot_path(self) -> Path:
+        """Return reference screenshot path for current config."""
+        project_root = Path(__file__).resolve().parent.parent
+        ref_dir = project_root / "test-screenshots"
+
+        api_prefix = "fix" if self.config.api_type == "FIX" else "ibapi"
+        mode_suffix = "live" if self.config.trading_mode == "LIVE" else "paper"
+        return ref_dir / f"{api_prefix}-{mode_suffix}.png"
+
+    def verify_target_state_before_credentials(self) -> bool:
+        """Verify the GUI is in the expected post-click state before typing credentials."""
+        expected_path = self._expected_state_screenshot_path()
+
+        if not expected_path.exists():
+            self.log(
+                "ERROR: No reference screenshot found for this configuration. "
+                f"Expected: {expected_path}"
+            )
+            return False
+
+        screenshotter = ScreenshotHandler(self.config, verbose=self.verbose)
+        current_path = os.path.join(self.config.screenshot_dir, "pre_credentials_state.png")
+        current = screenshotter.take_screenshot(current_path)
+        if not current:
+            self.log("ERROR: Failed to capture screenshot for state verification")
+            return False
+
+        try:
+            result = compare_images_pil(str(expected_path), current, threshold=0.01, max_diff_percentage=1.0)
+        except Exception as e:
+            self.log(f"ERROR: Failed to compare screenshots: {e}")
+            self.log(f"Reference: {expected_path}")
+            self.log(f"Current:   {current}")
+            return False
+
+        if not result["is_match"]:
+            self.log("ERROR: GUI state does not match expected target state after button clicks.")
+            self.log(f"Reference: {expected_path}")
+            self.log(f"Current:   {current}")
+            self.log(
+                "Comparison metrics: "
+                f"mean_diff={result['mean_diff']:.2f}, "
+                f"max_diff={result['max_diff']}, "
+                f"diff_percentage={result['diff_percentage']:.2f}%"
+            )
+            return False
+
+        self.log(
+            "✓ Target state verified before typing credentials "
+            f"(mean_diff={result['mean_diff']:.2f}, diff_percentage={result['diff_percentage']:.2f}%)"
+        )
+        return True
     
     def automate(self) -> int:
         """Main automation function."""
@@ -200,10 +255,14 @@ class AutomationHandler:
         # Click Trading Mode button
         self.click_trading_mode_button(window_id)
         
-        # Type username if provided
+        # Before typing credentials, verify we reached the expected target state.
+        if self.config.username or self.config.password:
+            if not self.verify_target_state_before_credentials():
+                self.log("Aborting credential entry due to failed state verification.")
+                return 1
+
+        # Type username/password if provided
         self.type_username(window_id)
-        
-        # Type password if provided
         self.type_password(window_id)
         
         self.log("")

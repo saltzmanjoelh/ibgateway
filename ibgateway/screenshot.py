@@ -5,7 +5,13 @@ Screenshot handling functionality.
 import os
 import subprocess
 import time
-from typing import Optional
+from typing import Optional, Dict, Any
+
+try:
+    from PIL import Image, ImageChops, ImageStat
+    HAS_PIL = True
+except ImportError:  # pragma: no cover
+    HAS_PIL = False
 
 from .config import Config
 
@@ -95,4 +101,59 @@ class ScreenshotHandler:
             ["which", command],
             capture_output=True
         ).returncode == 0
+
+
+def compare_images_pil(
+    img1_path: str,
+    img2_path: str,
+    *,
+    threshold: float = 0.01,
+    max_diff_percentage: float = 1.0,
+) -> Dict[str, Any]:
+    """Compare two images with Pillow and return similarity metrics.
+
+    Args:
+        img1_path: Reference image path
+        img2_path: Current image path
+        threshold: Mean pixel diff threshold as a fraction of 255
+        max_diff_percentage: Max percentage of pixels that may differ
+
+    Returns:
+        Dict containing mean_diff, max_diff, diff_percentage, is_match
+    """
+    if not HAS_PIL:
+        raise RuntimeError("Pillow is required for image comparison (install Pillow).")
+
+    img1 = Image.open(img1_path)
+    img2 = Image.open(img2_path)
+
+    if img1.size != img2.size:
+        raise ValueError(f"Images have different sizes: {img1.size} vs {img2.size}")
+
+    if img1.mode != "RGB":
+        img1 = img1.convert("RGB")
+    if img2.mode != "RGB":
+        img2 = img2.convert("RGB")
+
+    # Work in grayscale for easy pixel-diff counting.
+    diff = ImageChops.difference(img1, img2).convert("L")
+    stat = ImageStat.Stat(diff)
+
+    mean_diff = float(stat.mean[0])
+    hist = diff.histogram()  # 256 bins
+    max_diff = int(max(i for i, count in enumerate(hist) if count))
+
+    total_pixels = img1.size[0] * img1.size[1]
+    zero_pixels = int(hist[0])
+    different_pixels = total_pixels - zero_pixels
+    diff_percentage = (different_pixels / total_pixels) * 100 if total_pixels else 0.0
+
+    is_match = (mean_diff < (255.0 * threshold)) and (diff_percentage <= max_diff_percentage)
+
+    return {
+        "mean_diff": mean_diff,
+        "max_diff": max_diff,
+        "diff_percentage": diff_percentage,
+        "is_match": is_match,
+    }
 
