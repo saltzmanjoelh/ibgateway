@@ -60,6 +60,58 @@ class TestCLIInstallAndRun(unittest.TestCase):
                 else:
                     os.environ["IBGATEWAY_INSTALLER_PATH"] = old
 
+    def test_install_ibgateway_download_path_uses_curl_bin(self) -> None:
+        # Exercise the "download installer" branch without network by stubbing curl.
+        with tempfile.TemporaryDirectory() as td:
+            curl = os.path.join(td, "curl")
+            _write_exe(
+                curl,
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "# emulate: curl <url> -o <path>\n"
+                "out=''\n"
+                "for ((i=1; i<=$#; i++)); do\n"
+                "  if [[ \"${!i}\" == \"-o\" ]]; then\n"
+                "    j=$((i+1)); out=\"${!j}\";\n"
+                "  fi\n"
+                "done\n"
+                "cat > \"$out\" <<'EOF'\n"
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "log=''\n"
+                "while [[ $# -gt 0 ]]; do\n"
+                "  case \"$1\" in\n"
+                "    -f) log=\"$2\"; shift 2;;\n"
+                "    *) shift;;\n"
+                "  esac\n"
+                "done\n"
+                "echo 'installed' > \"${log:-/tmp/install-ibgateway.log}\"\n"
+                "exit 0\n"
+                "EOF\n"
+                "chmod +x \"$out\"\n"
+                "exit 0\n",
+            )
+
+            old_env = dict(os.environ)
+            try:
+                os.environ.pop("IBGATEWAY_INSTALLER_PATH", None)
+                os.environ["CURL_BIN"] = curl
+                cli = IBGatewayCLI()
+                self.assertEqual(cli._install_ibgateway(verbose=False, use_latest=False), 0)
+            finally:
+                os.environ.clear()
+                os.environ.update(old_env)
+
+    def test_install_ibgateway_generic_exception_returns_1(self) -> None:
+        cli = IBGatewayCLI()
+        old_env = dict(os.environ)
+        try:
+            os.environ["IBGATEWAY_INSTALLER_PATH"] = "/nope/installer.sh"
+            self.assertEqual(cli._install_ibgateway(verbose=False, use_latest=False), 1)
+        finally:
+            os.environ.clear()
+            os.environ.update(old_env)
+
     def test_run_ibgateway_normal_exit(self) -> None:
         cli = IBGatewayCLI()
         with tempfile.TemporaryDirectory() as td:

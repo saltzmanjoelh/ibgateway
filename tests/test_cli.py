@@ -48,3 +48,27 @@ class TestCLICompareScreenshots(unittest.TestCase):
             rc = cli._compare_screenshots(a, b, 0.01)
 
         self.assertEqual(rc, 0)
+
+    def test_compare_screenshots_has_changes_but_similar_returns_0(self) -> None:
+        cli = IBGatewayCLI()
+        with tempfile.TemporaryDirectory() as td:
+            a = os.path.join(td, "a.png")
+            b = os.path.join(td, "b.png")
+
+            # 100x100 black image.
+            img_a = Image.new("RGB", (100, 100), (0, 0, 0))
+            img_a.save(a, format="PNG")
+
+            # Change 2% pixels by 1 intensity => mean_diff small (similar) but diff_percentage > 1 => has_changes.
+            img_b = img_a.copy()
+            px = img_b.load()
+            changed = 0
+            for y in range(20):
+                for x in range(10):
+                    px[x, y] = (1, 1, 1)
+                    changed += 1
+            self.assertEqual(changed, 200)
+            img_b.save(b, format="PNG")
+
+            rc = cli._compare_screenshots(a, b, 0.01)
+        self.assertEqual(rc, 0)

@@ -115,7 +115,9 @@ class IBGatewayCLI:
             return 0 if result else 1
         
         elif parsed_args.command == "screenshot-server":
-            return self._run_screenshot_server(parsed_args.port or self.config.screenshot_port, verbose)
+            run_seconds_env = os.getenv("IBGATEWAY_SCREENSHOT_SERVER_SECONDS")
+            run_seconds = float(run_seconds_env) if run_seconds_env else None
+            return self._run_screenshot_server(parsed_args.port or self.config.screenshot_port, verbose, run_seconds=run_seconds)
         
         elif parsed_args.command == "compare-screenshots":
             return self._compare_screenshots(
@@ -133,11 +135,13 @@ class IBGatewayCLI:
         
         elif parsed_args.command == "port-forward":
             handler = PortForwarder(self.config, verbose)
-            return handler.start_forwarding()
+            run_seconds_env = os.getenv("IBGATEWAY_PORT_FORWARD_SECONDS")
+            run_seconds = float(run_seconds_env) if run_seconds_env else None
+            return handler.start_forwarding(run_seconds=run_seconds)
         
         return 1
     
-    def _run_screenshot_server(self, port: int, verbose: bool) -> int:
+    def _run_screenshot_server(self, port: int, verbose: bool, *, run_seconds: Optional[float] = None) -> int:
         """Run the screenshot HTTP server."""
         ScreenshotServer.screenshot_handler = ScreenshotHandler(self.config, verbose)
         ScreenshotServer.screenshot_dir = self.config.screenshot_dir
@@ -149,10 +153,21 @@ class IBGatewayCLI:
         print(f"=== Screenshot service ready on port {port} ===")
         
         try:
+            if run_seconds is not None:
+                import threading
+
+                t = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.2}, daemon=True)
+                t.start()
+                self._sleep(float(run_seconds))
+                server.shutdown()
+                server.server_close()
+                t.join(timeout=2)
+                return 0
             server.serve_forever()
         except KeyboardInterrupt:
             print("\nScreenshot server shutting down...")
             server.shutdown()
+            server.server_close()
         
         return 0
     
@@ -291,16 +306,26 @@ class IBGatewayCLI:
         except KeyboardInterrupt:
             xvfb_process.terminate()
             ibgateway_process.terminate()
+        finally:
+            # Best-effort cleanup for Xvfb to avoid orphan processes.
+            try:
+                xvfb_process.terminate()
+            except Exception:
+                pass
+            try:
+                xvfb_process.wait(timeout=5)
+            except Exception:
+                pass
         
         return 0
 
 
-def main():
+def main():  # pragma: no cover
     """Main entry point."""
     cli = IBGatewayCLI()
     sys.exit(cli.run())
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()
 

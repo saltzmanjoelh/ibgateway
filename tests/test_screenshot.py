@@ -1,12 +1,19 @@
 import os
 import tempfile
 import unittest
+import subprocess
 
 from ibgateway.config import Config
 from ibgateway.screenshot import ScreenshotHandler
 
 
 class TestScreenshotHandler(unittest.TestCase):
+    def test_log_verbose_prefix(self) -> None:
+        cfg = Config()
+        h = ScreenshotHandler(cfg, verbose=True)
+        # Just ensure it runs (covers verbose branch).
+        h.log("hello")
+
     def test_validate_path_rejects_traversal(self) -> None:
         cfg = Config()
         cfg.screenshot_dir = "/tmp/screenshots"
@@ -29,6 +36,13 @@ class TestScreenshotHandler(unittest.TestCase):
 
             out = os.path.join(td, "ok.png")
             self.assertTrue(h.validate_path(out))
+
+    def test_validate_path_realpath_exception_is_nonfatal(self) -> None:
+        cfg = Config()
+        # Force os.path.realpath(self.config.screenshot_dir) to raise TypeError.
+        cfg.screenshot_dir = None  # type: ignore[assignment]
+        h = ScreenshotHandler(cfg)
+        self.assertTrue(h.validate_path("/tmp/ok.png"))
 
     def test_take_screenshot_returns_path_when_scrot_succeeds(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -67,6 +81,149 @@ class TestScreenshotHandler(unittest.TestCase):
             h = ScreenshotHandler(cfg)
             res = h.take_screenshot(os.path.join(td, "shot.png"))
             self.assertIsNotNone(res)
+
+    def test_take_screenshot_auto_prefers_scrot_when_available(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            # Create a fake scrot binary on PATH.
+            bindir = os.path.join(td, "bin")
+            os.makedirs(bindir, exist_ok=True)
+            scrot = os.path.join(bindir, "scrot")
+            with open(scrot, "w", encoding="utf-8") as f:
+                f.write(
+                    "#!/usr/bin/env bash\n"
+                    "set -euo pipefail\n"
+                    "out=\"${@: -1}\"\n"
+                    "printf '\\x89PNG\\r\\n\\x1a\\n' > \"$out\"\n"
+                    "exit 0\n"
+                )
+            os.chmod(scrot, 0o755)
+
+            cfg = Config()
+            cfg.screenshot_dir = td
+            cfg.screenshot_backend = "auto"
+            cfg.screenshot_allow_fallback = False
+            h = ScreenshotHandler(cfg)
+
+            out = os.path.join(td, "shot.png")
+            old_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = bindir + ":" + old_path
+            try:
+                res = h.take_screenshot(out)
+            finally:
+                os.environ["PATH"] = old_path
+
+            self.assertEqual(res, out)
+            self.assertTrue(os.path.exists(out))
+
+    def test_take_screenshot_auto_uses_imagemagick_when_scrot_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            bindir = os.path.join(td, "bin")
+            os.makedirs(bindir, exist_ok=True)
+
+            # Provide only 'import' command.
+            imp = os.path.join(bindir, "import")
+            with open(imp, "w", encoding="utf-8") as f:
+                f.write(
+                    "#!/usr/bin/env bash\n"
+                    "set -euo pipefail\n"
+                    "out=\"${@: -1}\"\n"
+                    "printf '\\x89PNG\\r\\n\\x1a\\n' > \"$out\"\n"
+                    "exit 0\n"
+                )
+            os.chmod(imp, 0o755)
+
+            cfg = Config()
+            cfg.screenshot_dir = td
+            cfg.screenshot_backend = "auto"
+            cfg.screenshot_allow_fallback = False
+            h = ScreenshotHandler(cfg)
+
+            out = os.path.join(td, "shot.png")
+            old_path = os.environ.get("PATH", "")
+            # Put our bin first and make sure system 'scrot' is not found.
+            os.environ["PATH"] = bindir + ":" + old_path
+            try:
+                res = h.take_screenshot(out)
+            finally:
+                os.environ["PATH"] = old_path
+
+            self.assertEqual(res, out)
+            self.assertTrue(os.path.exists(out))
+
+    def test_take_screenshot_auto_no_tools_and_no_fallback_returns_none(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            bindir = os.path.join(td, "bin")
+            os.makedirs(bindir, exist_ok=True)
+            # Override 'which' so _command_exists always returns False without needing to patch.
+            which = os.path.join(bindir, "which")
+            with open(which, "w", encoding="utf-8") as f:
+                f.write("#!/usr/bin/env bash\nexit 1\n")
+            os.chmod(which, 0o755)
+
+            cfg = Config()
+            cfg.screenshot_dir = td
+            cfg.screenshot_backend = "auto"
+            cfg.screenshot_allow_fallback = False
+            h = ScreenshotHandler(cfg)
+
+            old_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = bindir
+            try:
+                res = h.take_screenshot(os.path.join(td, "shot.png"))
+            finally:
+                os.environ["PATH"] = old_path
+
+            self.assertIsNone(res)
+
+    def test_take_screenshot_auto_command_failure_falls_back_when_allowed(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            bindir = os.path.join(td, "bin")
+            os.makedirs(bindir, exist_ok=True)
+            scrot = os.path.join(bindir, "scrot")
+            with open(scrot, "w", encoding="utf-8") as f:
+                f.write("#!/usr/bin/env bash\nexit 1\n")
+            os.chmod(scrot, 0o755)
+
+            cfg = Config()
+            cfg.screenshot_dir = td
+            cfg.screenshot_backend = "auto"
+            cfg.screenshot_allow_fallback = True
+            h = ScreenshotHandler(cfg)
+
+            out = os.path.join(td, "shot.png")
+            old_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = bindir + ":" + old_path
+            try:
+                res = h.take_screenshot(out)
+            finally:
+                os.environ["PATH"] = old_path
+
+            self.assertEqual(res, out)
+            self.assertTrue(os.path.exists(out))
+
+    def test_take_screenshot_auto_subprocess_error_falls_back_when_allowed(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            bindir = os.path.join(td, "bin")
+            os.makedirs(bindir, exist_ok=True)
+            # Make 'scrot' a directory so running it raises an exception.
+            os.makedirs(os.path.join(bindir, "scrot"), exist_ok=True)
+
+            cfg = Config()
+            cfg.screenshot_dir = td
+            cfg.screenshot_backend = "auto"
+            cfg.screenshot_allow_fallback = True
+            h = ScreenshotHandler(cfg)
+
+            out = os.path.join(td, "shot.png")
+            old_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = bindir + ":" + old_path
+            try:
+                res = h.take_screenshot(out)
+            finally:
+                os.environ["PATH"] = old_path
+
+            self.assertEqual(res, out)
+            self.assertTrue(os.path.exists(out))
 
     def test_take_screenshot_respects_validate_path(self) -> None:
         cfg = Config()
