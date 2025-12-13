@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from pathlib import Path
+from typing import Tuple
 
 try:
     from PIL import Image
@@ -18,7 +19,7 @@ from ibgateway.config import Config
 from ibgateway.screenshot import compare_images_pil
 
 
-def _write_solid_rgb_png(path: str, *, color: tuple[int, int, int], size: tuple[int, int] = (64, 64)) -> None:
+def _write_solid_rgb_png(path: str, *, color: Tuple[int, int, int], size: Tuple[int, int] = (64, 64)) -> None:
     img = Image.new("RGB", size, color)
     img.save(path, format="PNG")
 
