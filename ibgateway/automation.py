@@ -18,6 +18,7 @@ class AutomationHandler:
     def __init__(self, config: Config, verbose: bool = False):
         self.config = config
         self.verbose = verbose
+        self._sleep_scale = float(getattr(config, "sleep_scale", 1.0) or 1.0)
         
         # Button coordinates (relative to content window)
         self.FIX_BUTTON_X = 311
@@ -35,10 +36,16 @@ class AutomationHandler:
             print(f"[AUTOMATION] {message}")
         else:
             print(message)
+
+    def _sleep(self, seconds: float) -> None:
+        scaled = seconds * self._sleep_scale
+        if scaled <= 0:
+            return
+        time.sleep(scaled)
     
     def run_xdotool(self, *args) -> Optional[str]:
         """Run xdotool command and return output."""
-        cmd = ["xdotool"] + list(args)
+        cmd = [getattr(self.config, "xdotool_bin", "xdotool")] + list(args)
         env = os.environ.copy()
         env["DISPLAY"] = self.config.display
         try:
@@ -47,7 +54,7 @@ class AutomationHandler:
                 capture_output=True,
                 text=True,
                 env=env,
-                timeout=10
+                timeout=float(getattr(self.config, "xdotool_timeout", 10))
             )
             if result.returncode == 0:
                 return result.stdout.strip()
@@ -71,7 +78,7 @@ class AutomationHandler:
                 self.log(f"✓ IB Gateway window found! Window ID: {window_id}")
                 return window_id.split()[0] if window_id else None
             
-            time.sleep(1)
+            self._sleep(1)
             elapsed += 1
         
         self.log(f"ERROR: IB Gateway window not found after {timeout}s")
@@ -83,12 +90,12 @@ class AutomationHandler:
         
         # Move mouse to location
         self.run_xdotool("mousemove", str(x), str(y))
-        time.sleep(0.3)
+        self._sleep(0.3)
         
         # Click
         self.run_xdotool("click", "1")
         self.run_xdotool("click", "1")
-        time.sleep(0.5)
+        self._sleep(0.5)
         
         self.log(f"✓ Clicked {button_name}")
     
@@ -129,7 +136,7 @@ class AutomationHandler:
                 self.PAPER_TRADING_BUTTON_Y,
                 "Paper Trading"
             )
-        time.sleep(1)
+        self._sleep(1)
     
     def type_username(self, window_id: str):
         """Type username into the focused field."""
@@ -139,7 +146,7 @@ class AutomationHandler:
         
         self.log("=== Typing Username ===")
         self.run_xdotool("type", "--delay", "50", self.config.username)
-        time.sleep(0.5)
+        self._sleep(0.5)
         self.log("✓ Username typed")
     
     def type_password(self, window_id: str):
@@ -150,9 +157,9 @@ class AutomationHandler:
         
         self.log("=== Typing Password ===")
         self.run_xdotool("key", "Tab")
-        time.sleep(0.3)
+        self._sleep(0.3)
         self.run_xdotool("type", "--delay", "50", self.config.password)
-        time.sleep(0.5)
+        self._sleep(0.5)
         self.log("✓ Password typed")
         self.run_xdotool("key", "Return")
     
@@ -179,7 +186,7 @@ class AutomationHandler:
         """Move window to top-left corner (0, 0)."""
         self.log(f"Moving window {window_id} to top-left corner (0, 0)")
         self.run_xdotool("windowmove", window_id, "0", "0")
-        time.sleep(0.5)
+        self._sleep(0.5)
         self.log("✓ Window moved to top-left corner")
 
     def _expected_state_screenshot_path(self) -> Path:
@@ -240,14 +247,14 @@ class AutomationHandler:
         self.config.print_config()
         self.list_all_windows()
         
-        window_id = self.find_ibgateway_window()
+        window_id = self.find_ibgateway_window(timeout=int(getattr(self.config, "window_search_timeout", 60)))
         if not window_id:
             return 1
         
         self.log(f"Content window ID: {window_id}")
         self.move_window_to_top_left(window_id)
         self.log("Waiting for window to fully render...")
-        time.sleep(2)
+        self._sleep(2)
         
         # Click API Type button
         self.click_api_type_button(window_id)

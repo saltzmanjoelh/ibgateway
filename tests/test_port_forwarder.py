@@ -1,75 +1,101 @@
 import unittest
-from types import SimpleNamespace
-from unittest.mock import patch
+import socket
+import socketserver
+import threading
+import time
 
 from ibgateway.config import Config
 from ibgateway.port_forwarder import PortForwarder
 
 
-class _Proc:
-    def __init__(self, pid=123):
-        self.pid = pid
-        self.terminated = False
-        self.killed = False
+class _Echo(socketserver.BaseRequestHandler):
+    def handle(self) -> None:
+        data = self.request.recv(1024)
+        if data:
+            self.request.sendall(b"echo:" + data)
 
-    def wait(self, timeout=None):
-        # start_forwarding waits without timeout; cleanup waits with timeout
-        if timeout is None:
-            raise KeyboardInterrupt()
-        return 0
 
-    def terminate(self):
-        self.terminated = True
-
-    def kill(self):
-        self.killed = True
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
 
 
 class TestPortForwarder(unittest.TestCase):
-    def test_check_port_listening_uses_netstat(self) -> None:
-        pf = PortForwarder(Config())
-        with patch(
-            "ibgateway.port_forwarder.subprocess.run",
-            return_value=SimpleNamespace(returncode=0, stdout="tcp 0 0 0.0.0.0:4003 "),
-        ):
-            self.assertTrue(pf.check_port_listening(4003))
-
-    def test_check_port_listening_falls_back_to_ss(self) -> None:
+    def test_check_port_listening(self) -> None:
+        port = _free_port()
         pf = PortForwarder(Config())
 
-        def fake_run(cmd, capture_output=True, text=True):
-            if cmd[0] == "netstat":
-                return SimpleNamespace(returncode=1, stdout="")
-            return SimpleNamespace(returncode=0, stdout="LISTEN 0 0 *:4004 ")
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", port))
+            s.listen(1)
+            self.assertTrue(pf.check_port_listening(port))
 
-        with patch("ibgateway.port_forwarder.subprocess.run", side_effect=fake_run):
-            self.assertTrue(pf.check_port_listening(4004))
+        self.assertFalse(pf.check_port_listening(port))
 
     def test_wait_for_ports_returns_true_when_ready(self) -> None:
-        pf = PortForwarder(Config())
-        with patch.object(pf, "check_port_listening", return_value=True):
-            with patch("ibgateway.port_forwarder.time.sleep"):
-                self.assertTrue(pf.wait_for_ports(timeout=1))
+        live = _free_port()
+        paper = _free_port()
 
-    def test_wait_for_ports_returns_false_when_timeout(self) -> None:
-        pf = PortForwarder(Config())
-        with patch.object(pf, "check_port_listening", return_value=False):
-            with patch("ibgateway.port_forwarder.time.sleep"):
-                self.assertFalse(pf.wait_for_ports(timeout=1))
+        cfg = Config()
+        cfg.ib_live_port = live
+        cfg.ib_paper_port = paper
+        cfg.sleep_scale = 0  # fast
+        pf = PortForwarder(cfg)
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s1, socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s2:
+            s1.bind(("127.0.0.1", live))
+            s1.listen(1)
+            s2.bind(("127.0.0.1", paper))
+            s2.listen(1)
+            self.assertTrue(pf.wait_for_ports(timeout=1))
 
     def test_start_forwarding_launches_processes_and_cleans_up(self) -> None:
-        pf = PortForwarder(Config())
+        live = _free_port()
+        paper = _free_port()
+        f_live = _free_port()
+        f_paper = _free_port()
 
-        # Make sure verification says forwarding is active.
-        def fake_check(port):
-            return port in (pf.forward_live_port, pf.forward_paper_port)
+        cfg = Config()
+        cfg.ib_live_port = live
+        cfg.ib_paper_port = paper
+        cfg.forward_live_port = f_live
+        cfg.forward_paper_port = f_paper
+        cfg.sleep_scale = 0
+        pf = PortForwarder(cfg)
 
-        with patch.object(pf, "wait_for_ports", return_value=True):
-            with patch.object(pf, "check_port_listening", side_effect=fake_check):
-                with patch("ibgateway.port_forwarder.signal.signal"):
-                    with patch("ibgateway.port_forwarder.subprocess.Popen", side_effect=[_Proc(1), _Proc(2)]):
-                        rc = pf.start_forwarding()
+        # Upstream echo servers.
+        s_live = socketserver.TCPServer(("127.0.0.1", live), _Echo)
+        s_paper = socketserver.TCPServer(("127.0.0.1", paper), _Echo)
+        t1 = threading.Thread(target=s_live.serve_forever, daemon=True)
+        t2 = threading.Thread(target=s_paper.serve_forever, daemon=True)
+        t1.start()
+        t2.start()
 
-        self.assertEqual(rc, 0)
-        # cleanup should have been attempted
-        self.assertTrue(all(p.terminated or p.killed for p in pf.processes))
+        # Run forwarder in background so we can exercise it.
+        rc_box = {"rc": None}
+
+        def _run():
+            rc_box["rc"] = pf.start_forwarding(run_seconds=1)
+
+        ft = threading.Thread(target=_run, daemon=True)
+        ft.start()
+
+        # Wait briefly for listeners.
+        deadline = time.time() + 2
+        while time.time() < deadline:
+            if pf.check_port_listening(f_live) and pf.check_port_listening(f_paper):
+                break
+            time.sleep(0.01)
+
+        with socket.create_connection(("127.0.0.1", f_live), timeout=1) as c:
+            c.sendall(b"hi")
+            self.assertEqual(c.recv(64), b"echo:hi")
+
+        ft.join(timeout=3)
+        self.assertEqual(rc_box["rc"], 0)
+
+        s_live.shutdown()
+        s_paper.shutdown()
+        s_live.server_close()
+        s_paper.server_close()

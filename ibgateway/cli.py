@@ -23,6 +23,13 @@ class IBGatewayCLI:
     def __init__(self):
         self.config = Config()
         self.parser = self._create_parser()
+
+    def _sleep(self, seconds: float) -> None:
+        scale = float(getattr(self.config, "sleep_scale", 1.0) or 1.0)
+        scaled = seconds * scale
+        if scaled <= 0:
+            return
+        time.sleep(scaled)
     
     def _create_parser(self) -> argparse.ArgumentParser:
         """Create argument parser with subcommands."""
@@ -108,7 +115,9 @@ class IBGatewayCLI:
             return 0 if result else 1
         
         elif parsed_args.command == "screenshot-server":
-            return self._run_screenshot_server(parsed_args.port or self.config.screenshot_port, verbose)
+            run_seconds_env = os.getenv("IBGATEWAY_SCREENSHOT_SERVER_SECONDS")
+            run_seconds = float(run_seconds_env) if run_seconds_env else None
+            return self._run_screenshot_server(parsed_args.port or self.config.screenshot_port, verbose, run_seconds=run_seconds)
         
         elif parsed_args.command == "compare-screenshots":
             return self._compare_screenshots(
@@ -126,11 +135,13 @@ class IBGatewayCLI:
         
         elif parsed_args.command == "port-forward":
             handler = PortForwarder(self.config, verbose)
-            return handler.start_forwarding()
+            run_seconds_env = os.getenv("IBGATEWAY_PORT_FORWARD_SECONDS")
+            run_seconds = float(run_seconds_env) if run_seconds_env else None
+            return handler.start_forwarding(run_seconds=run_seconds)
         
         return 1
     
-    def _run_screenshot_server(self, port: int, verbose: bool) -> int:
+    def _run_screenshot_server(self, port: int, verbose: bool, *, run_seconds: Optional[float] = None) -> int:
         """Run the screenshot HTTP server."""
         ScreenshotServer.screenshot_handler = ScreenshotHandler(self.config, verbose)
         ScreenshotServer.screenshot_dir = self.config.screenshot_dir
@@ -142,10 +153,21 @@ class IBGatewayCLI:
         print(f"=== Screenshot service ready on port {port} ===")
         
         try:
+            if run_seconds is not None:
+                import threading
+
+                t = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.2}, daemon=True)
+                t.start()
+                self._sleep(float(run_seconds))
+                server.shutdown()
+                server.server_close()
+                t.join(timeout=2)
+                return 0
             server.serve_forever()
         except KeyboardInterrupt:
             print("\nScreenshot server shutting down...")
             server.shutdown()
+            server.server_close()
         
         return 0
     
@@ -226,12 +248,18 @@ class IBGatewayCLI:
         log_path = "/tmp/install-ibgateway.log"
         
         try:
-            # Download installer
-            print(f"Downloading installer from {installer_url}...")
-            subprocess.run(
-                ["curl", installer_url, "-o", installer_path],
-                check=True
-            )
+            # Optional: use a pre-provided local installer (useful for tests/air-gapped).
+            provided = os.getenv("IBGATEWAY_INSTALLER_PATH")
+            if provided:
+                installer_path = provided
+                print(f"Using provided installer: {installer_path}")
+            else:
+                # Download installer
+                print(f"Downloading installer from {installer_url}...")
+                subprocess.run(
+                    [getattr(self.config, "curl_bin", "curl"), installer_url, "-o", installer_path],
+                    check=True
+                )
             
             # Make executable
             os.chmod(installer_path, 0o755)
@@ -260,17 +288,17 @@ class IBGatewayCLI:
         
         print("=== Starting Xvfb ===")
         xvfb_process = subprocess.Popen(
-            ["Xvfb", self.config.display, "-screen", "0", f"{self.config.resolution}x24", "-ac", "+extension", "GLX", "+render", "-noreset"],
+            [getattr(self.config, "xvfb_bin", "Xvfb"), self.config.display, "-screen", "0", f"{self.config.resolution}x24", "-ac", "+extension", "GLX", "+render", "-noreset"],
             env=env
         )
-        time.sleep(2)
+        self._sleep(float(os.getenv("IBGATEWAY_XVFB_STARTUP_DELAY", "2")))
         
         print("=== Starting IB Gateway ===")
         ibgateway_process = subprocess.Popen(
-            ["/opt/ibgateway/ibgateway"],
+            [getattr(self.config, "ibgateway_bin", "/opt/ibgateway/ibgateway")],
             env=env
         )
-        time.sleep(15)
+        self._sleep(float(os.getenv("IBGATEWAY_STARTUP_DELAY", "15")))
         
         # Keep running
         try:
@@ -278,16 +306,26 @@ class IBGatewayCLI:
         except KeyboardInterrupt:
             xvfb_process.terminate()
             ibgateway_process.terminate()
+        finally:
+            # Best-effort cleanup for Xvfb to avoid orphan processes.
+            try:
+                xvfb_process.terminate()
+            except Exception:
+                pass
+            try:
+                xvfb_process.wait(timeout=5)
+            except Exception:
+                pass
         
         return 0
 
 
-def main():
+def main():  # pragma: no cover
     """Main entry point."""
     cli = IBGatewayCLI()
     sys.exit(cli.run())
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()
 

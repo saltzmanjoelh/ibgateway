@@ -4,7 +4,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 from pathlib import Path
 from typing import Tuple
 
@@ -12,20 +11,7 @@ try:
     from PIL import Image
     HAS_PIL = True
 except ImportError:  # pragma: no cover
-    # Best-effort install so the integration tests can run in minimal envs.
     HAS_PIL = False
-    try:  # pragma: no cover
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--no-cache-dir", "Pillow"],
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        from PIL import Image  # type: ignore
-
-        HAS_PIL = True
-    except Exception:
-        HAS_PIL = False
 
 from ibgateway.automation import AutomationHandler
 from ibgateway.config import Config
@@ -100,28 +86,21 @@ class TestScreenshotComparisonIntegration(unittest.TestCase):
     def test_automation_verifies_target_state_before_credentials(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             ref = os.path.join(td, "ref.png")
-            current = os.path.join(td, "current.png")
-            _write_solid_rgb_png(ref, color=(10, 20, 30))
-            _write_solid_rgb_png(current, color=(10, 20, 30))
+            # Match the hermetic screenshot fallback (black 1024x768 by default).
+            _write_solid_rgb_png(ref, color=(0, 0, 0), size=(1024, 768))
 
             cfg = Config()
             cfg.api_type = "IB_API"
             cfg.trading_mode = "PAPER"
             cfg.screenshot_dir = td
             cfg.username = "user"  # ensure verification runs in automate flow, too
+            cfg.screenshot_backend = "python"
 
-            handler = AutomationHandler(cfg, verbose=False)
+            class _H(AutomationHandler):
+                def _expected_state_screenshot_path(self) -> Path:
+                    return Path(ref)
 
-            class _FakeScreenshotHandler:
-                def __init__(self, *_args, **_kwargs):
-                    pass
-
-                def take_screenshot(self, output_path: str):
-                    shutil.copyfile(current, output_path)
-                    return output_path
-
-            with patch("ibgateway.automation.ScreenshotHandler", _FakeScreenshotHandler):
-                with patch.object(handler, "_expected_state_screenshot_path", return_value=Path(ref)):
-                    ok = handler.verify_target_state_before_credentials()
+            handler = _H(cfg, verbose=False)
+            ok = handler.verify_target_state_before_credentials()
 
             self.assertTrue(ok)
