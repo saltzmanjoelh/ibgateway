@@ -24,8 +24,12 @@ def _write_solid_rgb_png(path: str, *, color: Tuple[int, int, int], size: Tuple[
     img.save(path, format="PNG")
 
 
-@unittest.skipUnless(HAS_PIL, "Pillow is required for screenshot comparison tests")
 class TestScreenshotComparisonIntegration(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        if not HAS_PIL:
+            raise unittest.SkipTest("Pillow not available")
+
     def test_compare_images_pil_identical_is_match(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             a = os.path.join(td, "a.png")
