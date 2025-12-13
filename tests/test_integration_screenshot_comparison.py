@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from pathlib import Path
 
 try:
     from PIL import Image
@@ -102,7 +103,7 @@ class TestScreenshotComparisonIntegration(unittest.TestCase):
                     return output_path
 
             with patch("ibgateway.automation.ScreenshotHandler", _FakeScreenshotHandler):
-                with patch.object(handler, "_expected_state_screenshot_path", return_value=ref):
+                with patch.object(handler, "_expected_state_screenshot_path", return_value=Path(ref)):
                     ok = handler.verify_target_state_before_credentials()
 
             self.assertTrue(ok)
