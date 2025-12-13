@@ -8,13 +8,65 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      run_native_tests:
+        description: "Run native Python tests + coverage"
+        type: boolean
+        default: true
+      run_docker_tests:
+        description: "Run Python tests inside Docker + coverage"
+        type: boolean
+        default: true
+      run_gui_automation:
+        description: "Run IB Gateway GUI automation smoke test (Docker)"
+        type: boolean
+        default: true
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  native-python-tests:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_native_tests == 'true' || inputs.run_native_tests == true }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install poetry
+
+      - name: Install dependencies
+        run: |
+          poetry install --no-interaction --no-ansi --no-root
+
+      - name: Run tests with coverage
+        run: |
+          poetry run python -m pip install --upgrade coverage
+          poetry run coverage run --source=ibgateway -m unittest discover -s tests -p "test*.py" -v
+          poetry run coverage report -m
+          poetry run coverage xml -o coverage-native.xml
+
+      - name: Upload native coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-native
+          path: coverage-native.xml
+          retention-days: 7
+
   docker-python-tests:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_docker_tests == 'true' || inputs.run_docker_tests == true }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -55,6 +107,7 @@ jobs:
           retention-days: 7
 
   test-automation:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_gui_automation == 'true' || inputs.run_gui_automation == true }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
