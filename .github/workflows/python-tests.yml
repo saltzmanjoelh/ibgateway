@@ -1,0 +1,43 @@
+name: Python Tests (Native)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  native-python-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup (Poetry + dependencies)
+        run: |
+          SKIP_SYSTEM_DEPS=1 bash scripts/setup.sh
+
+      - name: Run tests with coverage
+        run: |
+          poetry run python -m pip install --upgrade coverage
+          poetry run coverage run --source=ibgateway -m unittest discover -s tests -p "test*.py" -v
+          poetry run coverage report -m --fail-under=85
+          poetry run coverage xml -o coverage-native.xml
+
+      - name: Upload native coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-native
+          path: coverage-native.xml
+          retention-days: 7

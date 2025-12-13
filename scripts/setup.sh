@@ -1,6 +1,16 @@
 #!/bin/bash
 set -x  # Enable debug output for bash script
 
+# Optional flags for CI/lightweight setup:
+# - SKIP_SYSTEM_DEPS=1: skip apt-get installs (assumes Python already available)
+
+# Pick a Python binary (prefer 'python' if present for setup-python on CI)
+if command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+else
+    PYTHON_BIN="python3"
+fi
+
 # Determine if we need sudo (not running as root)
 if [ "$EUID" -eq 0 ]; then
     # Running as root (e.g., in Docker), no sudo needed
@@ -16,26 +26,32 @@ else
 fi
 
 # Update and install basic tools
-$APT_CMD update && $APT_CMD install -y \
-    xvfb \
-    xterm \
-    dbus-x11 \
-    python3 \
-    python3-pip \
-    python3-numpy \
-    net-tools \
-    curl \
-    xdotool \
-    wmctrl \
-    scrot \
-    imagemagick \
-    socat
+if [ "${SKIP_SYSTEM_DEPS:-0}" != "1" ]; then
+    $APT_CMD update && $APT_CMD install -y \
+        xvfb \
+        xterm \
+        dbus-x11 \
+        python3 \
+        python3-pip \
+        python3-numpy \
+        net-tools \
+        curl \
+        xdotool \
+        wmctrl \
+        scrot \
+        imagemagick \
+        socat
+fi
 
 # Install Poetry
-pip3 install --no-cache-dir poetry
+$PYTHON_BIN -m pip install --no-cache-dir --upgrade pip
+$PYTHON_BIN -m pip install --no-cache-dir poetry
 
 # Add Poetry to PATH (persist for current session)
 export PATH="$HOME/.local/bin:$PATH"
+if [ -n "${GITHUB_PATH:-}" ]; then
+    echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+fi
 
 # Verify Poetry installation
 if ! command -v poetry >/dev/null 2>&1; then
@@ -53,7 +69,7 @@ poetry config virtualenvs.create false
 poetry install --no-interaction --no-ansi --no-root
 
 # Verify Python dependencies are installed
-if ! python3 -c "import PIL; import dotenv" 2>/dev/null; then
+if ! $PYTHON_BIN -c "import PIL; import dotenv" 2>/dev/null; then
     echo "WARNING: Some Python dependencies may not be installed correctly"
 fi
 
@@ -72,7 +88,7 @@ done
 # Install IB Gateway using CLI tool (if found)
 if [ -n "$IBGATEWAY_CLI" ]; then
     echo "=== Installing IB Gateway ==="
-    python3 "$IBGATEWAY_CLI" install
+    $PYTHON_BIN "$IBGATEWAY_CLI" install
     
     # Verify IB Gateway installation
     # Check common installation locations

@@ -10,21 +10,9 @@ import time
 from typing import Optional, Dict, List
 from http.server import HTTPServer
 
-try:
-    from PIL import Image, ImageChops, ImageStat
-    HAS_PIL = True
-except ImportError:
-    HAS_PIL = False
-
-try:
-    import numpy as np
-    HAS_NUMPY = True
-except ImportError:
-    HAS_NUMPY = False
-
 from .config import Config
 from .automation import AutomationHandler
-from .screenshot import ScreenshotHandler
+from .screenshot import ScreenshotHandler, compare_images_pil
 from .screenshot_server import ScreenshotServer
 from .port_forwarder import PortForwarder
 
@@ -188,27 +176,26 @@ class IBGatewayCLI:
         print(f"  Size difference: {size_diff} bytes ({size_diff_percent:.2f}%)")
         print()
         
-        # PIL comparison if available
-        if HAS_PIL:
-            result = self._compare_images_pil(img1_path, img2_path, threshold)
-            if result:
-                print("Image content comparison:")
-                print(f"  Mean pixel difference: {result['mean_diff']:.2f}")
-                print(f"  Max pixel difference: {result['max_diff']}")
-                print(f"  Different pixels: {result['diff_percentage']:.2f}%")
-                print()
-                
-                if result['has_changes']:
-                    print("X Images are different (changes detected)")
-                    if result['is_similar']:
-                        print("  Note: Changes are relatively small")
-                    else:
-                        print("  Note: Significant changes detected")
-                    return 0
+        # Pillow-based comparison (preferred). Fallback to file-size only if Pillow missing.
+        try:
+            result = compare_images_pil(img1_path, img2_path, threshold=threshold, max_diff_percentage=1.0)
+            print("Image content comparison:")
+            print(f"  Mean pixel difference: {result['mean_diff']:.2f}")
+            print(f"  Max pixel difference: {result['max_diff']}")
+            print(f"  Different pixels: {result['diff_percentage']:.2f}%")
+            print()
+
+            if result["has_changes"]:
+                print("X Images are different (changes detected)")
+                if result["is_similar"]:
+                    print("  Note: Changes are relatively small")
                 else:
-                    print("⚠ Images are very similar (minimal changes)")
-                    return round(result['mean_diff'])
-        else:
+                    print("  Note: Significant changes detected")
+                return 0
+
+            print("⚠ Images are very similar (minimal changes)")
+            return round(result["mean_diff"])
+        except RuntimeError:
             print("WARNING: PIL/Pillow not available. Install for detailed comparison:")
             print("  pip install Pillow")
             print()
@@ -216,54 +203,13 @@ class IBGatewayCLI:
             if size_diff_percent > 5:
                 print("✓ Files are different (size difference > 5%)")
                 return 0
-            else:
-                print("⚠ Files are similar (size difference < 5%)")
-                return 1
-        
-        return 0
-    
-    def _compare_images_pil(self, img1_path: str, img2_path: str, threshold: float) -> Optional[Dict]:
-        """Compare images using PIL."""
-        if not HAS_PIL:
-            return None
-        
-        try:
-            img1 = Image.open(img1_path)
-            img2 = Image.open(img2_path)
-            
-            if img1.size != img2.size:
-                print(f"WARNING: Images have different sizes: {img1.size} vs {img2.size}")
-                return None
-            
-            if img1.mode != 'RGB':
-                img1 = img1.convert('RGB')
-            if img2.mode != 'RGB':
-                img2 = img2.convert('RGB')
-            
-            diff = ImageChops.difference(img1, img2)
-            stat = ImageStat.Stat(diff)
-            
-            mean_diff = sum(stat.mean) / len(stat.mean)
-            max_diff = max(stat.extrema[0][1], stat.extrema[1][1], stat.extrema[2][1])
-            
-            if HAS_NUMPY:
-                diff_array = np.array(diff)
-                different_pixels = np.sum(np.any(diff_array > 0, axis=2))
-                total_pixels = diff_array.shape[0] * diff_array.shape[1]
-                diff_percentage = (different_pixels / total_pixels) * 100
-            else:
-                diff_percentage = 0
-            
-            return {
-                'mean_diff': mean_diff,
-                'max_diff': max_diff,
-                'diff_percentage': diff_percentage,
-                'is_similar': mean_diff < (255 * threshold),
-                'has_changes': diff_percentage > 1.0
-            }
+            print("⚠ Files are similar (size difference < 5%)")
+            return 1
         except Exception as e:
             print(f"ERROR comparing images: {e}")
-            return None
+            return 1
+        
+        return 0
     
     def _install_ibgateway(self, verbose: bool, use_latest: bool = False) -> int:
         """Install IB Gateway.
