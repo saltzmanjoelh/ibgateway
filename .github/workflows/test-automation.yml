@@ -44,7 +44,7 @@ jobs:
 
       - name: Setup (Poetry + dependencies)
         run: |
-          SKIP_SYSTEM_DEPS=1 SKIP_IBGATEWAY_INSTALL=1 bash scripts/setup.sh
+          SKIP_SYSTEM_DEPS=1 bash scripts/setup.sh
 
       - name: Run tests with coverage
         run: |

@@ -3,7 +3,6 @@ set -x  # Enable debug output for bash script
 
 # Optional flags for CI/lightweight setup:
 # - SKIP_SYSTEM_DEPS=1: skip apt-get installs (assumes Python already available)
-# - SKIP_IBGATEWAY_INSTALL=1: skip downloading/installing IB Gateway
 
 # Pick a Python binary (prefer 'python' if present for setup-python on CI)
 if command -v python >/dev/null 2>&1; then
@@ -87,9 +86,7 @@ for cli_path in /ibgateway_cli.py /workspace/ibgateway_cli.py ./ibgateway_cli.py
 done
 
 # Install IB Gateway using CLI tool (if found)
-if [ "${SKIP_IBGATEWAY_INSTALL:-0}" = "1" ]; then
-    echo "Skipping IB Gateway install (SKIP_IBGATEWAY_INSTALL=1)"
-elif [ -n "$IBGATEWAY_CLI" ]; then
+if [ -n "$IBGATEWAY_CLI" ]; then
     echo "=== Installing IB Gateway ==="
     $PYTHON_BIN "$IBGATEWAY_CLI" install
     
@@ -128,9 +125,7 @@ fi
 echo ""
 echo "=== Setup Complete ==="
 echo "Poetry: $(poetry --version 2>/dev/null || echo 'not available')"
-if [ "${SKIP_IBGATEWAY_INSTALL:-0}" = "1" ]; then
-    echo "IB Gateway: Skipped"
-elif [ -n "$IBGATEWAY_EXEC" ]; then
+if [ -n "$IBGATEWAY_EXEC" ]; then
     echo "IB Gateway: Installed at $IBGATEWAY_EXEC"
 else
     echo "IB Gateway: Installation attempted (verify manually)"
