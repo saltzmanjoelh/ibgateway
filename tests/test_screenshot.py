@@ -120,14 +120,26 @@ class TestScreenshotHandler(unittest.TestCase):
             bindir = os.path.join(td, "bin")
             os.makedirs(bindir, exist_ok=True)
 
+            # Provide a local `which` that hides scrot and exposes import (so we don't
+            # accidentally pick up a system scrot from the runner).
+            which = os.path.join(bindir, "which")
+            with open(which, "w", encoding="utf-8") as f:
+                f.write(
+                    "#!/bin/sh\n"
+                    "cmd=\"$1\"\n"
+                    "if [ \"$cmd\" = \"import\" ]; then exit 0; fi\n"
+                    "exit 1\n"
+                )
+            os.chmod(which, 0o755)
+
             # Provide only 'import' command.
             imp = os.path.join(bindir, "import")
             with open(imp, "w", encoding="utf-8") as f:
                 f.write(
-                    "#!/usr/bin/env bash\n"
-                    "set -euo pipefail\n"
-                    "out=\"${@: -1}\"\n"
-                    "printf '\\x89PNG\\r\\n\\x1a\\n' > \"$out\"\n"
+                    "#!/bin/sh\n"
+                    "set -eu\n"
+                    "out=\"$(eval echo \\${$#})\"\n"
+                    "printf '\\211PNG\\r\\n\\032\\n' > \"$out\"\n"
                     "exit 0\n"
                 )
             os.chmod(imp, 0o755)
@@ -140,8 +152,8 @@ class TestScreenshotHandler(unittest.TestCase):
 
             out = os.path.join(td, "shot.png")
             old_path = os.environ.get("PATH", "")
-            # Put our bin first and make sure system 'scrot' is not found.
-            os.environ["PATH"] = bindir + ":" + old_path
+            # Use only our bindir so scrot can't be discovered.
+            os.environ["PATH"] = bindir
             try:
                 res = h.take_screenshot(out)
             finally:
@@ -157,7 +169,7 @@ class TestScreenshotHandler(unittest.TestCase):
             # Override 'which' so _command_exists always returns False without needing to patch.
             which = os.path.join(bindir, "which")
             with open(which, "w", encoding="utf-8") as f:
-                f.write("#!/usr/bin/env bash\nexit 1\n")
+                f.write("#!/bin/sh\nexit 1\n")
             os.chmod(which, 0o755)
 
             cfg = Config()
