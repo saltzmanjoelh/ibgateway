@@ -42,14 +42,9 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Poetry
+      - name: Setup (Poetry + dependencies)
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install poetry
-
-      - name: Install dependencies
-        run: |
-          poetry install --no-interaction --no-ansi --no-root
+          SKIP_SYSTEM_DEPS=1 SKIP_IBGATEWAY_INSTALL=1 bash scripts/setup.sh
 
       - name: Run tests with coverage
         run: |
