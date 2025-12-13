@@ -1,7 +1,7 @@
 import io
+import os
 import tempfile
 import unittest
-import unittest.mock
 from types import SimpleNamespace
 
 from ibgateway.screenshot_server import ScreenshotServer
@@ -42,14 +42,10 @@ class TestScreenshotServerMore(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             h = _Handler("/screenshots/ok.png", screenshot_dir=td)
 
-            def fake_realpath(path):
-                # pretend the file resolves outside the screenshot_dir
-                if path.endswith("ok.png"):
-                    return "/etc/ok.png"
-                return td
-
-            with unittest.mock.patch("ibgateway.screenshot_server.os.path.realpath", side_effect=fake_realpath):
-                h.do_GET()
+            # Create a symlink that resolves outside the screenshot_dir.
+            link_path = os.path.join(td, "ok.png")
+            os.symlink("/etc/passwd", link_path)
+            h.do_GET()
 
             self.assertEqual(h.status, 403)
 

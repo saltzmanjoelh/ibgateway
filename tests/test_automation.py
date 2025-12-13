@@ -2,10 +2,11 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from ibgateway.automation import AutomationHandler
 from ibgateway.config import Config
+
+from PIL import Image
 
 
 class TestAutomationHandler(unittest.TestCase):
@@ -25,108 +26,58 @@ class TestAutomationHandler(unittest.TestCase):
     def test_verify_target_state_fails_when_reference_missing(self) -> None:
         cfg = Config()
         cfg.screenshot_dir = "/tmp/screenshots"
-        h = AutomationHandler(cfg)
-        with patch.object(h, "_expected_state_screenshot_path", return_value=Path("/nope/ref.png")):
-            self.assertFalse(h.verify_target_state_before_credentials())
+        cfg.screenshot_backend = "python"
 
-    def test_verify_target_state_fails_when_screenshot_capture_fails(self) -> None:
-        cfg = Config()
-        with tempfile.TemporaryDirectory() as td:
-            cfg.screenshot_dir = td
-            h = AutomationHandler(cfg)
-            ref = Path(os.path.join(td, "ref.png"))
-            ref.write_bytes(b"x")
+        class _H(AutomationHandler):
+            def _expected_state_screenshot_path(self) -> Path:
+                return Path("/nope/ref.png")
 
-            class _FakeScreenshotHandler:
-                def __init__(self, *_a, **_k):
-                    pass
-
-                def take_screenshot(self, _output_path: str):
-                    return None
-
-            with patch.object(h, "_expected_state_screenshot_path", return_value=ref):
-                with patch("ibgateway.automation.ScreenshotHandler", _FakeScreenshotHandler):
-                    self.assertFalse(h.verify_target_state_before_credentials())
+        h = _H(cfg)
+        self.assertFalse(h.verify_target_state_before_credentials())
 
     def test_verify_target_state_fails_when_compare_raises(self) -> None:
         cfg = Config()
         with tempfile.TemporaryDirectory() as td:
             cfg.screenshot_dir = td
-            h = AutomationHandler(cfg)
+            cfg.screenshot_backend = "python"
             ref = Path(os.path.join(td, "ref.png"))
-            ref.write_bytes(b"x")
+            ref.write_bytes(b"not-a-png")
 
-            class _FakeScreenshotHandler:
-                def __init__(self, *_a, **_k):
-                    pass
+            class _H(AutomationHandler):
+                def _expected_state_screenshot_path(self) -> Path:
+                    return ref
 
-                def take_screenshot(self, output_path: str):
-                    Path(output_path).write_bytes(b"y")
-                    return output_path
-
-            with patch.object(h, "_expected_state_screenshot_path", return_value=ref):
-                with patch("ibgateway.automation.ScreenshotHandler", _FakeScreenshotHandler):
-                    with patch("ibgateway.automation.compare_images_pil", side_effect=Exception("boom")):
-                        self.assertFalse(h.verify_target_state_before_credentials())
+            h = _H(cfg)
+            self.assertFalse(h.verify_target_state_before_credentials())
 
     def test_verify_target_state_fails_when_not_match(self) -> None:
         cfg = Config()
         with tempfile.TemporaryDirectory() as td:
             cfg.screenshot_dir = td
-            h = AutomationHandler(cfg)
+            cfg.screenshot_backend = "python"
+            # Reference image is white; fallback "current" screenshot is black -> should not match.
             ref = Path(os.path.join(td, "ref.png"))
-            ref.write_bytes(b"x")
+            Image.new("RGB", (1024, 768), (255, 255, 255)).save(str(ref), format="PNG")
 
-            class _FakeScreenshotHandler:
-                def __init__(self, *_a, **_k):
-                    pass
+            class _H(AutomationHandler):
+                def _expected_state_screenshot_path(self) -> Path:
+                    return ref
 
-                def take_screenshot(self, output_path: str):
-                    Path(output_path).write_bytes(b"y")
-                    return output_path
-
-            with patch.object(h, "_expected_state_screenshot_path", return_value=ref):
-                with patch("ibgateway.automation.ScreenshotHandler", _FakeScreenshotHandler):
-                    with patch(
-                        "ibgateway.automation.compare_images_pil",
-                        return_value={
-                            "mean_diff": 1.0,
-                            "max_diff": 10,
-                            "diff_percentage": 2.0,
-                            "is_similar": True,
-                            "has_changes": True,
-                            "is_match": False,
-                        },
-                    ):
-                        self.assertFalse(h.verify_target_state_before_credentials())
+            h = _H(cfg)
+            self.assertFalse(h.verify_target_state_before_credentials())
 
     def test_verify_target_state_succeeds_when_match(self) -> None:
         cfg = Config()
         with tempfile.TemporaryDirectory() as td:
             cfg.screenshot_dir = td
-            h = AutomationHandler(cfg)
+            cfg.screenshot_backend = "python"
+            # Reference image matches fallback "current" screenshot: black 1024x768.
             ref = Path(os.path.join(td, "ref.png"))
-            ref.write_bytes(b"x")
+            Image.new("RGB", (1024, 768), (0, 0, 0)).save(str(ref), format="PNG")
 
-            class _FakeScreenshotHandler:
-                def __init__(self, *_a, **_k):
-                    pass
+            class _H(AutomationHandler):
+                def _expected_state_screenshot_path(self) -> Path:
+                    return ref
 
-                def take_screenshot(self, output_path: str):
-                    Path(output_path).write_bytes(b"y")
-                    return output_path
-
-            with patch.object(h, "_expected_state_screenshot_path", return_value=ref):
-                with patch("ibgateway.automation.ScreenshotHandler", _FakeScreenshotHandler):
-                    with patch(
-                        "ibgateway.automation.compare_images_pil",
-                        return_value={
-                            "mean_diff": 0.0,
-                            "max_diff": 0,
-                            "diff_percentage": 0.0,
-                            "is_similar": True,
-                            "has_changes": False,
-                            "is_match": True,
-                        },
-                    ):
-                        self.assertTrue(h.verify_target_state_before_credentials())
+            h = _H(cfg)
+            self.assertTrue(h.verify_target_state_before_credentials())

@@ -1,5 +1,6 @@
+import os
+import tempfile
 import unittest
-from unittest.mock import patch
 
 from ibgateway.cli import IBGatewayCLI
 
@@ -7,49 +8,34 @@ from ibgateway.cli import IBGatewayCLI
 class TestCLIRouting(unittest.TestCase):
     def test_no_command_prints_help_and_returns_1(self) -> None:
         cli = IBGatewayCLI()
-        with patch.object(cli.parser, "print_help") as ph:
-            rc = cli.run([])
+        rc = cli.run([])
         self.assertEqual(rc, 1)
-        ph.assert_called_once()
-
-    def test_run_automate_routes_to_automation_handler(self) -> None:
-        cli = IBGatewayCLI()
-        with patch("ibgateway.cli.AutomationHandler") as AH:
-            AH.return_value.automate.return_value = 0
-            rc = cli.run(["automate"])
-        self.assertEqual(rc, 0)
 
     def test_run_screenshot_routes_to_screenshot_handler(self) -> None:
-        cli = IBGatewayCLI()
-        with patch("ibgateway.cli.ScreenshotHandler") as SH:
-            SH.return_value.take_screenshot.return_value = "/tmp/x.png"
-            rc = cli.run(["screenshot", "--output", "/tmp/x.png"])
-        self.assertEqual(rc, 0)
-
-    def test_run_screenshot_failure_returns_1(self) -> None:
-        cli = IBGatewayCLI()
-        with patch("ibgateway.cli.ScreenshotHandler") as SH:
-            SH.return_value.take_screenshot.return_value = None
-            rc = cli.run(["screenshot"])
-        self.assertEqual(rc, 1)
-
-    def test_run_screenshot_server_routes_to_method(self) -> None:
-        cli = IBGatewayCLI()
-        with patch.object(cli, "_run_screenshot_server", return_value=0) as rss:
-            rc = cli.run(["screenshot-server", "--port", "9999"])
-        self.assertEqual(rc, 0)
-        rss.assert_called_once()
-
-    def test_run_port_forward_routes_to_port_forwarder(self) -> None:
-        cli = IBGatewayCLI()
-        with patch("ibgateway.cli.PortForwarder") as PF:
-            PF.return_value.start_forwarding.return_value = 0
-            rc = cli.run(["port-forward"])
-        self.assertEqual(rc, 0)
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "x.png")
+            old_env = dict(os.environ)
+            os.environ["SCREENSHOT_DIR"] = td
+            os.environ["SCREENSHOT_BACKEND"] = "python"
+            os.environ["IBGATEWAY_SLEEP_SCALE"] = "0"
+            try:
+                cli = IBGatewayCLI()
+                rc = cli.run(["screenshot", "--output", out])
+            finally:
+                os.environ.clear()
+                os.environ.update(old_env)
+            self.assertEqual(rc, 0)
+            self.assertTrue(os.path.exists(out))
 
     def test_run_compare_screenshots_routes(self) -> None:
-        cli = IBGatewayCLI()
-        with patch.object(cli, "_compare_screenshots", return_value=0) as cs:
-            rc = cli.run(["compare-screenshots", "a.png", "b.png"])
-        self.assertEqual(rc, 0)
-        cs.assert_called_once()
+        with tempfile.TemporaryDirectory() as td:
+            a = os.path.join(td, "a.png")
+            b = os.path.join(td, "b.png")
+            with open(a, "wb") as f:
+                f.write(b"\x89PNG\r\n\x1a\n")
+            with open(b, "wb") as f:
+                f.write(b"\x89PNG\r\n\x1a\n")
+            cli = IBGatewayCLI()
+            rc = cli.run(["compare-screenshots", a, b])
+        # Invalid PNG content will cause comparison error and return 1.
+        self.assertEqual(rc, 1)

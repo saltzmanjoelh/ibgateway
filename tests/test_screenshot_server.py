@@ -3,9 +3,10 @@ import json
 import os
 import tempfile
 import unittest
-import unittest.mock
 from types import SimpleNamespace
 
+from ibgateway.config import Config
+from ibgateway.screenshot import ScreenshotHandler
 from ibgateway.screenshot_server import ScreenshotServer
 
 
@@ -53,21 +54,19 @@ class TestScreenshotServer(unittest.TestCase):
 
     def test_screenshot_endpoint_returns_json(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            out = os.path.join(td, "screenshot_1.png")
+            cfg = Config()
+            cfg.screenshot_dir = td
+            cfg.screenshot_backend = "python"
+            handler = ScreenshotHandler(cfg, verbose=False)
 
-            class _Fake:
-                def take_screenshot(self):
-                    with open(out, "wb") as f:
-                        f.write(b"png")
-                    return out
-
-            h = _Handler("/screenshot", screenshot_dir=td, screenshot_handler=_Fake())
+            h = _Handler("/screenshot", screenshot_dir=td, screenshot_handler=handler)
             h.do_GET()
             self.assertEqual(h.status, 200)
             payload = json.loads(h.wfile.getvalue().decode())
             self.assertTrue(payload["success"])
-            self.assertEqual(payload["filename"], "screenshot_1.png")
-            self.assertEqual(payload["url"], "/screenshots/screenshot_1.png")
+            self.assertTrue(payload["filename"].startswith("screenshot_"))
+            self.assertTrue(payload["filename"].endswith(".png"))
+            self.assertTrue(payload["url"].startswith("/screenshots/"))
 
     def test_latest_endpoint_404_when_no_screenshots(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -84,13 +83,12 @@ class TestScreenshotServer(unittest.TestCase):
             with open(b, "wb") as f:
                 f.write(b"b")
 
-            # Ensure deterministic "latest" by patching getctime.
-            def fake_getctime(path):
-                return 1 if path.endswith("screenshot_1.png") else 2
+            # Ensure deterministic ordering via mtime.
+            os.utime(a, (1, 1))
+            os.utime(b, (2, 2))
 
-            with unittest.mock.patch("ibgateway.screenshot_server.os.path.getctime", side_effect=fake_getctime):
-                h = _Handler("/screenshot/latest", screenshot_dir=td, screenshot_handler=None)
-                h.do_GET()
+            h = _Handler("/screenshot/latest", screenshot_dir=td, screenshot_handler=None)
+            h.do_GET()
 
             self.assertEqual(h.status, 200)
             payload = json.loads(h.wfile.getvalue().decode())
@@ -105,12 +103,11 @@ class TestScreenshotServer(unittest.TestCase):
             with open(b, "wb") as f:
                 f.write(b"b" * 20)
 
-            def fake_getctime(path):
-                return 1 if path.endswith("screenshot_1.png") else 2
+            os.utime(a, (1, 1))
+            os.utime(b, (2, 2))
 
-            with unittest.mock.patch("ibgateway.screenshot_server.os.path.getctime", side_effect=fake_getctime):
-                h = _Handler("/screenshots", screenshot_dir=td, screenshot_handler=None)
-                h.do_GET()
+            h = _Handler("/screenshots", screenshot_dir=td, screenshot_handler=None)
+            h.do_GET()
 
             self.assertEqual(h.status, 200)
             payload = json.loads(h.wfile.getvalue().decode())

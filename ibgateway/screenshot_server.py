@@ -105,7 +105,8 @@ class ScreenshotServer(BaseHTTPRequestHandler):
         """Handle /screenshot/latest endpoint."""
         screenshots = glob.glob(os.path.join(self.screenshot_dir, "screenshot_*.png"))
         if screenshots:
-            latest = max(screenshots, key=os.path.getctime)
+            # Use mtime for deterministic ordering (ctime is not settable on Linux).
+            latest = max(screenshots, key=os.path.getmtime)
             filename = os.path.basename(latest)
             screenshot_url = f"/screenshots/{filename}"
             
@@ -120,7 +121,7 @@ class ScreenshotServer(BaseHTTPRequestHandler):
                 "filename": filename,
                 "url": screenshot_url,
                 "full_url": f"http://localhost:{self.server.server_port}{screenshot_url}",
-                "created": os.path.getctime(latest)
+                "created": os.path.getmtime(latest)
             }
             self.wfile.write(json.dumps(response).encode())
         else:
@@ -129,7 +130,7 @@ class ScreenshotServer(BaseHTTPRequestHandler):
     def _handle_list_screenshots(self):
         """Handle /screenshots endpoint - list all screenshots."""
         screenshots = glob.glob(os.path.join(self.screenshot_dir, "screenshot_*.png"))
-        screenshots.sort(key=os.path.getctime, reverse=True)
+        screenshots.sort(key=os.path.getmtime, reverse=True)
         
         screenshot_list = []
         for screenshot in screenshots:
@@ -138,7 +139,7 @@ class ScreenshotServer(BaseHTTPRequestHandler):
                 "filename": filename,
                 "url": f"/screenshots/{filename}",
                 "full_url": f"http://localhost:{self.server.server_port}/screenshots/{filename}",
-                "created": os.path.getctime(screenshot),
+                "created": os.path.getmtime(screenshot),
                 "size": os.path.getsize(screenshot)
             })
         

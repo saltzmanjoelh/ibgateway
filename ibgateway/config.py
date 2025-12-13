@@ -42,6 +42,29 @@ class Config:
         self.resolution = os.getenv("RESOLUTION", "1024x768")
         self.screenshot_dir = os.getenv("SCREENSHOT_DIR", "/tmp/screenshots")
         self.screenshot_port = int(os.getenv("SCREENSHOT_PORT", "8080"))
+
+        # Tooling/config overrides for hermetic execution (useful for tests/CI).
+        self.xdotool_bin = os.getenv("XDOTOOL_BIN", "xdotool")
+        self.xdotool_timeout = float(os.getenv("XDOTOOL_TIMEOUT", "10"))
+        self.sleep_scale = float(os.getenv("IBGATEWAY_SLEEP_SCALE", "1"))
+        self.window_search_timeout = int(os.getenv("IBGATEWAY_WINDOW_TIMEOUT", "60"))
+
+        # Screenshot backend controls.
+        # - "auto" (default): try scrot/import, then fallback to Pillow placeholder.
+        # - "python": always generate a placeholder PNG via Pillow.
+        self.screenshot_backend = os.getenv("SCREENSHOT_BACKEND", "auto").lower()
+        self.screenshot_allow_fallback = os.getenv("SCREENSHOT_ALLOW_FALLBACK", "1") not in ("0", "false", "no")
+
+        # Port forwarding configuration.
+        self.ib_live_port = int(os.getenv("IB_LIVE_PORT", "4001"))
+        self.ib_paper_port = int(os.getenv("IB_PAPER_PORT", "4002"))
+        self.forward_live_port = int(os.getenv("IB_FORWARD_LIVE_PORT", "4003"))
+        self.forward_paper_port = int(os.getenv("IB_FORWARD_PAPER_PORT", "4004"))
+
+        # CLI command overrides.
+        self.curl_bin = os.getenv("CURL_BIN", "curl")
+        self.xvfb_bin = os.getenv("XVFB_BIN", "Xvfb")
+        self.ibgateway_bin = os.getenv("IBGATEWAY_BIN", "/opt/ibgateway/ibgateway")
         
         # Validate API type
         if self.api_type not in ["FIX", "IB_API"]:

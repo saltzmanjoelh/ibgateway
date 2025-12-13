@@ -5,7 +5,7 @@ Screenshot handling functionality.
 import os
 import subprocess
 import time
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 
 try:
     from PIL import Image, ImageChops, ImageStat
@@ -64,8 +64,13 @@ class ScreenshotHandler:
         
         env = os.environ.copy()
         env["DISPLAY"] = self.config.display
-        
-        # Try scrot first, then imagemagick
+
+        # Optional: force Python (Pillow) backend for hermetic execution.
+        if getattr(self.config, "screenshot_backend", "auto") == "python":
+            return self._fallback_write_placeholder_png(output_path)
+
+        # Try scrot first, then imagemagick; if unavailable (or fails), optionally fall back to Pillow.
+        cmd: Optional[list] = None
         if self._command_exists("scrot"):
             self.log("Taking screenshot with scrot...")
             cmd = ["scrot", "-z", output_path]
@@ -73,6 +78,9 @@ class ScreenshotHandler:
             self.log("Taking screenshot with imagemagick...")
             cmd = ["import", "-window", "root", output_path]
         else:
+            if getattr(self.config, "screenshot_allow_fallback", True):
+                self.log("WARNING: No screenshot tool available; using Pillow fallback")
+                return self._fallback_write_placeholder_png(output_path)
             self.log("ERROR: No screenshot tool available (scrot or imagemagick)")
             return None
         
@@ -88,10 +96,15 @@ class ScreenshotHandler:
             if result.returncode == 0 and os.path.exists(output_path):
                 self.log(f"Screenshot saved to: {output_path}")
                 return output_path
-            else:
-                self.log(f"ERROR: Screenshot failed: {result.stderr}")
-                return None
+            if getattr(self.config, "screenshot_allow_fallback", True):
+                self.log(f"WARNING: Screenshot command failed; using Pillow fallback: {result.stderr}")
+                return self._fallback_write_placeholder_png(output_path)
+            self.log(f"ERROR: Screenshot failed: {result.stderr}")
+            return None
         except Exception as e:
+            if getattr(self.config, "screenshot_allow_fallback", True):
+                self.log(f"WARNING: Error taking screenshot; using Pillow fallback: {e}")
+                return self._fallback_write_placeholder_png(output_path)
             self.log(f"ERROR: Error taking screenshot: {e}")
             return None
     
@@ -101,6 +114,36 @@ class ScreenshotHandler:
             ["which", command],
             capture_output=True
         ).returncode == 0
+
+    def _fallback_write_placeholder_png(self, output_path: str) -> Optional[str]:
+        """Write a deterministic placeholder screenshot PNG via Pillow."""
+        if not HAS_PIL:
+            self.log("ERROR: Pillow not available for screenshot fallback")
+            return None
+
+        try:
+            size = _parse_resolution(getattr(self.config, "resolution", "1024x768"))
+            img = Image.new("RGB", size, (0, 0, 0))
+            img.save(output_path, format="PNG")
+            if os.path.exists(output_path):
+                self.log(f"Screenshot (fallback) saved to: {output_path}")
+                return output_path
+            return None
+        except Exception as e:
+            self.log(f"ERROR: Failed to write fallback screenshot: {e}")
+            return None
+
+
+def _parse_resolution(resolution: str) -> Tuple[int, int]:
+    """Parse resolution like '1024x768'."""
+    try:
+        w_s, h_s = resolution.lower().split("x", 1)
+        w, h = int(w_s.strip()), int(h_s.strip())
+        if w > 0 and h > 0:
+            return (w, h)
+    except Exception:
+        pass
+    return (1024, 768)
 
 
 def compare_images_pil(

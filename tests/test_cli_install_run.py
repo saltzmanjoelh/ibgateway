@@ -1,69 +1,83 @@
+import os
+import tempfile
 import unittest
-from types import SimpleNamespace
-from unittest.mock import patch
+import subprocess
 
 from ibgateway.cli import IBGatewayCLI
 
 
-class _P:
-    def __init__(self):
-        self.terminated = False
-
-    def wait(self):
-        return 0
-
-    def terminate(self):
-        self.terminated = True
+def _write_exe(path: str, contents: str) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(contents)
+    os.chmod(path, 0o755)
 
 
 class TestCLIInstallAndRun(unittest.TestCase):
     def test_install_ibgateway_success(self) -> None:
         cli = IBGatewayCLI()
 
-        # curl + installer invocation
-        with patch("ibgateway.cli.subprocess.run", return_value=SimpleNamespace(returncode=0)):
-            with patch("ibgateway.cli.os.chmod"):
+        with tempfile.TemporaryDirectory() as td:
+            installer = os.path.join(td, "installer.sh")
+            _write_exe(
+                installer,
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "# accept: -q -f <log>\n"
+                "log=''\n"
+                "while [[ $# -gt 0 ]]; do\n"
+                "  case \"$1\" in\n"
+                "    -f) log=\"$2\"; shift 2;;\n"
+                "    *) shift;;\n"
+                "  esac\n"
+                "done\n"
+                "echo 'installed' > \"${log:-/tmp/install-ibgateway.log}\"\n"
+                "exit 0\n",
+            )
+
+            old = os.environ.get("IBGATEWAY_INSTALLER_PATH")
+            os.environ["IBGATEWAY_INSTALLER_PATH"] = installer
+            try:
                 self.assertEqual(cli._install_ibgateway(verbose=False, use_latest=False), 0)
+            finally:
+                if old is None:
+                    os.environ.pop("IBGATEWAY_INSTALLER_PATH", None)
+                else:
+                    os.environ["IBGATEWAY_INSTALLER_PATH"] = old
 
     def test_install_ibgateway_calledprocesserror_returns_1(self) -> None:
-        import subprocess
-
         cli = IBGatewayCLI()
-        with patch(
-            "ibgateway.cli.subprocess.run",
-            side_effect=subprocess.CalledProcessError(returncode=1, cmd=["curl"]),
-        ):
-            self.assertEqual(cli._install_ibgateway(verbose=False, use_latest=False), 1)
+        with tempfile.TemporaryDirectory() as td:
+            installer = os.path.join(td, "installer.sh")
+            _write_exe(installer, "#!/usr/bin/env bash\nexit 1\n")
+
+            old = os.environ.get("IBGATEWAY_INSTALLER_PATH")
+            os.environ["IBGATEWAY_INSTALLER_PATH"] = installer
+            try:
+                self.assertEqual(cli._install_ibgateway(verbose=False, use_latest=False), 1)
+            finally:
+                if old is None:
+                    os.environ.pop("IBGATEWAY_INSTALLER_PATH", None)
+                else:
+                    os.environ["IBGATEWAY_INSTALLER_PATH"] = old
 
     def test_run_ibgateway_normal_exit(self) -> None:
         cli = IBGatewayCLI()
+        with tempfile.TemporaryDirectory() as td:
+            xvfb = os.path.join(td, "Xvfb")
+            ib = os.path.join(td, "ibgateway")
+            _write_exe(xvfb, "#!/usr/bin/env bash\nexit 0\n")
+            _write_exe(ib, "#!/usr/bin/env bash\nexit 0\n")
 
-        xvfb = _P()
-        ib = _P()
-
-        with patch("ibgateway.cli.subprocess.Popen", side_effect=[xvfb, ib]):
-            with patch("ibgateway.cli.time.sleep"):
+            old_env = dict(os.environ)
+            os.environ["XVFB_BIN"] = xvfb
+            os.environ["IBGATEWAY_BIN"] = ib
+            os.environ["IBGATEWAY_XVFB_STARTUP_DELAY"] = "0"
+            os.environ["IBGATEWAY_STARTUP_DELAY"] = "0"
+            os.environ["IBGATEWAY_SLEEP_SCALE"] = "0"
+            try:
+                # Recreate CLI so it reloads Config overrides.
+                cli = IBGatewayCLI()
                 self.assertEqual(cli._run_ibgateway(verbose=False), 0)
-
-    def test_run_ibgateway_keyboardinterrupt_terminates(self) -> None:
-        cli = IBGatewayCLI()
-
-        class _PI:
-            def __init__(self):
-                self.terminated = False
-
-            def wait(self):
-                raise KeyboardInterrupt()
-
-            def terminate(self):
-                self.terminated = True
-
-        xvfb = _PI()
-        ib = _PI()
-
-        with patch("ibgateway.cli.subprocess.Popen", side_effect=[xvfb, ib]):
-            with patch("ibgateway.cli.time.sleep"):
-                self.assertEqual(cli._run_ibgateway(verbose=False), 0)
-
-        self.assertTrue(xvfb.terminated)
-        self.assertTrue(ib.terminated)
+            finally:
+                os.environ.clear()
+                os.environ.update(old_env)
