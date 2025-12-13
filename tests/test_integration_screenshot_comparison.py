@@ -12,7 +12,20 @@ try:
     from PIL import Image
     HAS_PIL = True
 except ImportError:  # pragma: no cover
+    # Best-effort install so the integration tests can run in minimal envs.
     HAS_PIL = False
+    try:  # pragma: no cover
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--no-cache-dir", "Pillow"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        from PIL import Image  # type: ignore
+
+        HAS_PIL = True
+    except Exception:
+        HAS_PIL = False
 
 from ibgateway.automation import AutomationHandler
 from ibgateway.config import Config
@@ -28,7 +41,7 @@ class TestScreenshotComparisonIntegration(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         if not HAS_PIL:
-            raise unittest.SkipTest("Pillow not available")
+            raise unittest.SkipTest("Pillow not available (and could not be installed)")
 
     def test_compare_images_pil_identical_is_match(self) -> None:
         with tempfile.TemporaryDirectory() as td:
