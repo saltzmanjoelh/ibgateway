@@ -10,7 +10,7 @@ from ibgateway.cli import IBGatewayCLI
 def main():
     """Main entry point."""
     cli = IBGatewayCLI()
-    sys.exit(cli.run())
+    sys.exit(cli.run_command())
 
 
 if __name__ == "__main__":

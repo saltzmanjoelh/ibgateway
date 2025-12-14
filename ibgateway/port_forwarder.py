@@ -66,34 +66,42 @@ class PortForwarder:
         self.log(f"WARNING: IB Gateway ports not available after {timeout}s, starting forwarding anyway")
         return False
     
-    def start_forwarding(self) -> int:
-        """Start socat port forwarding."""
+    def start_background(self) -> bool:
+        """Start socat port forwarding in background mode (non-blocking)."""
         self.log("--- Starting socat port forwarding ---")
         self.log(f"Forwarding {self.forward_live_port} -> 127.0.0.1:{self.live_port} (Live Trading)")
         self.log(f"Forwarding {self.forward_paper_port} -> 127.0.0.1:{self.paper_port} (Paper Trading)")
         
-        # Wait for ports
+        # Wait for ports (non-blocking, will start anyway)
         self.wait_for_ports()
         
         # Start Live Trading forwarding
         self.log(f"Starting socat forwarding for Live Trading ({self.forward_live_port} -> 127.0.0.1:{self.live_port})...")
-        live_process = subprocess.Popen(
-            ["socat", f"TCP-LISTEN:{self.forward_live_port},fork,reuseaddr", f"TCP:127.0.0.1:{self.live_port}"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-        self.processes.append(live_process)
-        self.log(f"✓ Live Trading forwarding started (PID: {live_process.pid})")
+        try:
+            live_process = subprocess.Popen(
+                ["socat", f"TCP-LISTEN:{self.forward_live_port},fork,reuseaddr", f"TCP:127.0.0.1:{self.live_port}"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            self.processes.append(live_process)
+            self.log(f"✓ Live Trading forwarding started (PID: {live_process.pid})")
+        except Exception as e:
+            self.log(f"ERROR: Failed to start Live Trading forwarding: {e}")
+            return False
         
         # Start Paper Trading forwarding
         self.log(f"Starting socat forwarding for Paper Trading ({self.forward_paper_port} -> 127.0.0.1:{self.paper_port})...")
-        paper_process = subprocess.Popen(
-            ["socat", f"TCP-LISTEN:{self.forward_paper_port},fork,reuseaddr", f"TCP:127.0.0.1:{self.paper_port}"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-        self.processes.append(paper_process)
-        self.log(f"✓ Paper Trading forwarding started (PID: {paper_process.pid})")
+        try:
+            paper_process = subprocess.Popen(
+                ["socat", f"TCP-LISTEN:{self.forward_paper_port},fork,reuseaddr", f"TCP:127.0.0.1:{self.paper_port}"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            self.processes.append(paper_process)
+            self.log(f"✓ Paper Trading forwarding started (PID: {paper_process.pid})")
+        except Exception as e:
+            self.log(f"ERROR: Failed to start Paper Trading forwarding: {e}")
+            return False
         
         # Verify forwarding
         time.sleep(1)
@@ -101,9 +109,17 @@ class PortForwarder:
             self.log("✓ Port forwarding is active")
             self.log(f"  - Live Trading: 0.0.0.0:{self.forward_live_port} -> 127.0.0.1:{self.live_port}")
             self.log(f"  - Paper Trading: 0.0.0.0:{self.forward_paper_port} -> 127.0.0.1:{self.paper_port}")
-            self.log("--- Port forwarding ready ---")
         else:
             self.log("WARNING: Port forwarding may not be active, check logs")
+        
+        return True
+    
+    def start_forwarding(self) -> int:
+        """Start socat port forwarding (blocking mode for standalone use)."""
+        if not self.start_background():
+            return 1
+        
+        self.log("--- Port forwarding ready ---")
         
         # Set up signal handlers for cleanup
         signal.signal(signal.SIGTERM, self._cleanup)

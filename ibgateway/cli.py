@@ -8,13 +8,13 @@ import subprocess
 import sys
 import time
 from typing import Optional, Dict, List
-from http.server import HTTPServer
 
 from .config import Config
 from .automation import AutomationHandler
-from .screenshot import ScreenshotHandler, compare_images_pil
+from .screenshot import ScreenshotHandler
 from .screenshot_server import ScreenshotServer
 from .port_forwarder import PortForwarder
+from .orchestrator import ServiceOrchestrator
 
 
 class IBGatewayCLI:
@@ -37,8 +37,8 @@ class IBGatewayCLI:
         
         subparsers = parser.add_subparsers(dest="command", help="Available commands")
         
-        # automate subcommand
-        automate_parser = subparsers.add_parser("automate", help="Automate IB Gateway GUI configuration")
+        # automate-ibgateway subcommand
+        automate_parser = subparsers.add_parser("automate-ibgateway", help="Automate IB Gateway GUI configuration")
         automate_parser.add_argument("--username", help="IB Gateway username (overrides env var)")
         automate_parser.add_argument("--password", help="IB Gateway password (overrides env var)")
         automate_parser.add_argument("--api-type", choices=["FIX", "IB_API"], help="API type (overrides env var)")
@@ -63,23 +63,30 @@ class IBGatewayCLI:
         test_parser.add_argument("test_image", help="Path to test/reference screenshot")
         test_parser.add_argument("--threshold", type=float, default=0.01, help="Similarity threshold")
         
-        # install subcommand
-        install_parser = subparsers.add_parser("install", help="Install IB Gateway")
+        # start-services subcommand
+        start_parser = subparsers.add_parser("start-services", help="Start all IB Gateway services (orchestrator)")
+        start_parser.add_argument("--username", help="IB Gateway username (overrides env var)")
+        start_parser.add_argument("--password", help="IB Gateway password (overrides env var)")
+        start_parser.add_argument("--api-type", choices=["FIX", "IB_API"], help="API type (overrides env var)")
+        start_parser.add_argument("--trading-mode", choices=["LIVE", "PAPER"], help="Trading mode (overrides env var)")
+        
+        # install-ibgateway subcommand
+        install_parser = subparsers.add_parser("install-ibgateway", help="Install IB Gateway")
         install_parser.add_argument(
             "--latest",
             action="store_true",
             help="Use latest version instead of stable (default: stable)"
         )
         
-        # run subcommand
-        run_parser = subparsers.add_parser("run", help="Run IB Gateway")
+        # start-ibgateway subcommand
+        start_ibgateway_parser = subparsers.add_parser("start-ibgateway", help="Start IB Gateway (minimal setup)")
         
         # port-forward subcommand
         port_forward_parser = subparsers.add_parser("port-forward", help="Start port forwarding")
         
         return parser
     
-    def run(self, args: Optional[List[str]] = None) -> int:
+    def run_command(self, args: Optional[List[str]] = None) -> int:
         """Run the CLI with given arguments."""
         parsed_args = self.parser.parse_args(args)
         
@@ -102,7 +109,20 @@ class IBGatewayCLI:
             self.config.screenshot_port = parsed_args.port
         
         # Route to appropriate handler
-        if parsed_args.command == "automate":
+        if parsed_args.command == "start-services":
+            # Update config from command line args if provided
+            if hasattr(parsed_args, "username") and parsed_args.username:
+                self.config.username = parsed_args.username
+            if hasattr(parsed_args, "password") and parsed_args.password:
+                self.config.password = parsed_args.password
+            if hasattr(parsed_args, "api_type") and parsed_args.api_type:
+                self.config.api_type = parsed_args.api_type.upper()
+            if hasattr(parsed_args, "trading_mode") and parsed_args.trading_mode:
+                self.config.trading_mode = parsed_args.trading_mode.upper()
+            orchestrator = ServiceOrchestrator(self.config, verbose)
+            return orchestrator.start()
+        
+        elif parsed_args.command == "automate-ibgateway":
             handler = AutomationHandler(self.config, verbose)
             return handler.automate()
         
@@ -113,27 +133,29 @@ class IBGatewayCLI:
             return 0 if result else 1
         
         elif parsed_args.command == "screenshot-server":
-            return self._run_screenshot_server(parsed_args.port or self.config.screenshot_port, verbose)
+            port = parsed_args.port or self.config.screenshot_port
+            return ScreenshotServer.run_server(self.config, port, verbose)
         
         elif parsed_args.command == "compare-screenshots":
-            return self._compare_screenshots(
+            handler = ScreenshotHandler(self.config, verbose)
+            return handler.compare_screenshots(
                 parsed_args.image1,
                 parsed_args.image2,
                 parsed_args.threshold
             )
         
         elif parsed_args.command == "test-screenshot":
-            return self._test_screenshot(
+            handler = ScreenshotHandler(self.config, verbose)
+            return handler.test_screenshot(
                 parsed_args.test_image,
-                parsed_args.threshold,
-                verbose
+                parsed_args.threshold
             )
         
-        elif parsed_args.command == "install":
+        elif parsed_args.command == "install-ibgateway":
             use_latest = getattr(parsed_args, "latest", False)
             return self._install_ibgateway(verbose, use_latest)
         
-        elif parsed_args.command == "run":
+        elif parsed_args.command == "start-ibgateway":
             return self._run_ibgateway(verbose)
         
         elif parsed_args.command == "port-forward":
@@ -141,107 +163,6 @@ class IBGatewayCLI:
             return handler.start_forwarding()
         
         return 1
-    
-    def _run_screenshot_server(self, port: int, verbose: bool) -> int:
-        """Run the screenshot HTTP server."""
-        ScreenshotServer.screenshot_handler = ScreenshotHandler(self.config, verbose)
-        ScreenshotServer.screenshot_dir = self.config.screenshot_dir
-        
-        server = HTTPServer(("0.0.0.0", port), ScreenshotServer)
-        print(f"Screenshot server starting on port {port}")
-        print(f"Screenshots directory: {self.config.screenshot_dir}")
-        print(f"Access the service at: http://localhost:{port}/")
-        print(f"--- Screenshot service ready on port {port} ---")
-        
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            print("\nScreenshot server shutting down...")
-            server.shutdown()
-        
-        return 0
-    
-    def _compare_screenshots(self, img1_path: str, img2_path: str, threshold: float) -> int:
-        """Compare two screenshots."""
-        if not os.path.exists(img1_path):
-            print(f"ERROR: Image not found: {img1_path}")
-            return 1
-        
-        if not os.path.exists(img2_path):
-            print(f"ERROR: Image not found: {img2_path}")
-            return 1
-        
-        print(f"Comparing images:")
-        print(f"  Image 1: {img1_path}")
-        print(f"  Image 2: {img2_path}")
-        print()
-        
-        # Simple file size comparison
-        size1 = os.path.getsize(img1_path)
-        size2 = os.path.getsize(img2_path)
-        size_diff = abs(size1 - size2)
-        size_diff_percent = abs(size1 - size2) / max(size1, size2) * 100 if max(size1, size2) > 0 else 0
-        
-        print("File size comparison:")
-        print(f"  Image 1 size: {size1} bytes")
-        print(f"  Image 2 size: {size2} bytes")
-        print(f"  Size difference: {size_diff} bytes ({size_diff_percent:.2f}%)")
-        print()
-        
-        # Pillow-based comparison (preferred). Fallback to file-size only if Pillow missing.
-        try:
-            result = compare_images_pil(img1_path, img2_path, threshold=threshold, max_diff_percentage=1.0)
-            print("Image content comparison:")
-            print(f"  Mean pixel difference: {result['mean_diff']:.2f}")
-            print(f"  Max pixel difference: {result['max_diff']}")
-            print(f"  Different pixels: {result['diff_percentage']:.2f}%")
-            print()
-
-            if result["has_changes"]:
-                print("X Images are different (changes detected)")
-                if result["is_similar"]:
-                    print("  Note: Changes are relatively small")
-                else:
-                    print("  Note: Significant changes detected")
-                return 0
-
-            print("⚠ Images are very similar (minimal changes)")
-            return round(result["mean_diff"])
-        except RuntimeError:
-            print("WARNING: PIL/Pillow not available. Install for detailed comparison:")
-            print("  pip install Pillow")
-            print()
-            print("Using file size comparison only.")
-            if size_diff_percent > 5:
-                print("✓ Files are different (size difference > 5%)")
-                return 0
-            print("⚠ Files are similar (size difference < 5%)")
-            return 1
-        except Exception as e:
-            print(f"ERROR comparing images: {e}")
-            return 1
-        
-        return 0
-    
-    def _test_screenshot(self, test_image_path: str, threshold: float, verbose: bool) -> int:
-        """Take a screenshot and compare it with a test image."""
-        if not os.path.exists(test_image_path):
-            print(f"ERROR: Test image not found: {test_image_path}")
-            return 1
-        
-        print("--- Step 1: Taking current screenshot ---")
-        handler = ScreenshotHandler(self.config, verbose)
-        current_screenshot_path = handler.take_screenshot()
-        
-        if not current_screenshot_path:
-            print("ERROR: Failed to take screenshot")
-            return 1
-        
-        print(f"✓ Screenshot taken: {current_screenshot_path}")
-        print()
-        
-        print("--- Step 2: Comparing screenshots ---")
-        return self._compare_screenshots(test_image_path, current_screenshot_path, threshold)
     
     def _install_ibgateway(self, verbose: bool, use_latest: bool = False) -> int:
         """Install IB Gateway.
@@ -312,14 +233,3 @@ class IBGatewayCLI:
             ibgateway_process.terminate()
         
         return 0
-
-
-def main():
-    """Main entry point."""
-    cli = IBGatewayCLI()
-    sys.exit(cli.run())
-
-
-if __name__ == "__main__":
-    main()
-

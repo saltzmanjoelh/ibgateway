@@ -8,7 +8,7 @@ ENV USER=root
 ENV RESOLUTION=1024x768
 
 # 1. Install noVNC and Websockify
-RUN apt-get update && apt-get install -y x11vnc git python3 python3-pip
+RUN apt-get update && apt-get install -y x11vnc git python3 python3-pip && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /opt/novnc
 RUN git clone https://github.com/novnc/noVNC.git /opt/novnc
 RUN git clone https://github.com/novnc/websockify /opt/novnc/utils/websockify
@@ -24,9 +24,7 @@ COPY test-screenshots/ /test-screenshots/
 # 3. Update and install basic tools + Xvfb and Install Poetry
 COPY scripts/setup.sh /scripts/setup.sh
 RUN chmod +x /scripts/setup.sh
-RUN ./scripts/setup.sh
-RUN apt-get autoremove -y \
-    && rm -rf /var/lib/apt/lists/*
+RUN ./scripts/setup.sh && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 # 4. Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh

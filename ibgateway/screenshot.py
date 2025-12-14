@@ -101,6 +101,102 @@ class ScreenshotHandler:
             ["which", command],
             capture_output=True
         ).returncode == 0
+    
+    def compare_screenshots(self, img1_path: str, img2_path: str, threshold: float = 0.01) -> int:
+        """Compare two screenshots and return exit code.
+        
+        Args:
+            img1_path: First image path
+            img2_path: Second image path
+            threshold: Similarity threshold
+            
+        Returns:
+            0 if images are different, 1 if similar, or error code
+        """
+        if not os.path.exists(img1_path):
+            self.log(f"ERROR: Image not found: {img1_path}")
+            return 1
+        
+        if not os.path.exists(img2_path):
+            self.log(f"ERROR: Image not found: {img2_path}")
+            return 1
+        
+        self.log(f"Comparing images:")
+        self.log(f"  Image 1: {img1_path}")
+        self.log(f"  Image 2: {img2_path}")
+        self.log("")
+        
+        # Simple file size comparison
+        size1 = os.path.getsize(img1_path)
+        size2 = os.path.getsize(img2_path)
+        size_diff = abs(size1 - size2)
+        size_diff_percent = abs(size1 - size2) / max(size1, size2) * 100 if max(size1, size2) > 0 else 0
+        
+        self.log("File size comparison:")
+        self.log(f"  Image 1 size: {size1} bytes")
+        self.log(f"  Image 2 size: {size2} bytes")
+        self.log(f"  Size difference: {size_diff} bytes ({size_diff_percent:.2f}%)")
+        self.log("")
+        
+        # Pillow-based comparison (preferred). Fallback to file-size only if Pillow missing.
+        try:
+            result = compare_images_pil(img1_path, img2_path, threshold=threshold, max_diff_percentage=1.0)
+            self.log("Image content comparison:")
+            self.log(f"  Mean pixel difference: {result['mean_diff']:.2f}")
+            self.log(f"  Max pixel difference: {result['max_diff']}")
+            self.log(f"  Different pixels: {result['diff_percentage']:.2f}%")
+            self.log("")
+
+            if result["has_changes"]:
+                self.log("X Images are different (changes detected)")
+                if result["is_similar"]:
+                    self.log("  Note: Changes are relatively small")
+                else:
+                    self.log("  Note: Significant changes detected")
+                return 0
+
+            self.log("⚠ Images are very similar (minimal changes)")
+            return round(result["mean_diff"])
+        except RuntimeError:
+            self.log("WARNING: PIL/Pillow not available. Install for detailed comparison:")
+            self.log("  pip install Pillow")
+            self.log("")
+            self.log("Using file size comparison only.")
+            if size_diff_percent > 5:
+                self.log("✓ Files are different (size difference > 5%)")
+                return 0
+            self.log("⚠ Files are similar (size difference < 5%)")
+            return 1
+        except Exception as e:
+            self.log(f"ERROR comparing images: {e}")
+            return 1
+    
+    def test_screenshot(self, test_image_path: str, threshold: float = 0.01) -> int:
+        """Take a screenshot and compare it with a test image.
+        
+        Args:
+            test_image_path: Path to test/reference screenshot
+            threshold: Similarity threshold
+            
+        Returns:
+            Exit code (0 if different, 1 if similar, or error code)
+        """
+        if not os.path.exists(test_image_path):
+            self.log(f"ERROR: Test image not found: {test_image_path}")
+            return 1
+        
+        self.log("--- Step 1: Taking current screenshot ---")
+        current_screenshot_path = self.take_screenshot()
+        
+        if not current_screenshot_path:
+            self.log("ERROR: Failed to take screenshot")
+            return 1
+        
+        self.log(f"✓ Screenshot taken: {current_screenshot_path}")
+        self.log("")
+        
+        self.log("--- Step 2: Comparing screenshots ---")
+        return self.compare_screenshots(test_image_path, current_screenshot_path, threshold)
 
 
 def compare_images_pil(

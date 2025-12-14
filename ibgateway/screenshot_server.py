@@ -6,10 +6,11 @@ import os
 import json
 import glob
 import time
-from http.server import BaseHTTPRequestHandler
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
 from .screenshot import ScreenshotHandler
+from .config import Config
 
 
 class ScreenshotServer(BaseHTTPRequestHandler):
@@ -17,6 +18,35 @@ class ScreenshotServer(BaseHTTPRequestHandler):
     
     screenshot_handler = None
     screenshot_dir = "/tmp/screenshots"
+    
+    @classmethod
+    def run_server(cls, config: Config, port: int, verbose: bool = False) -> int:
+        """Run the screenshot HTTP server.
+        
+        Args:
+            config: Configuration object
+            port: Port to listen on
+            verbose: Enable verbose output
+            
+        Returns:
+            Exit code (0 on success)
+        """
+        cls.screenshot_handler = ScreenshotHandler(config, verbose)
+        cls.screenshot_dir = config.screenshot_dir
+        
+        server = HTTPServer(("0.0.0.0", port), cls)
+        print(f"Screenshot server starting on port {port}")
+        print(f"Screenshots directory: {config.screenshot_dir}")
+        print(f"Access the service at: http://localhost:{port}/")
+        print(f"--- Screenshot service ready on port {port} ---")
+        
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            print("\nScreenshot server shutting down...")
+            server.shutdown()
+        
+        return 0
     
     def do_GET(self):
         """Handle GET requests."""

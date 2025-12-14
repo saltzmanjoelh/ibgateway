@@ -261,7 +261,7 @@ done
 
 **Automate IB Gateway configuration**:
 ```bash
-docker exec ibgateway python3 /ibgateway_cli.py automate \
+docker exec ibgateway python3 /ibgateway_cli.py automate-ibgateway \
   --username myusername \
   --password mypassword \
   --api-type IB_API
