@@ -94,7 +94,7 @@ class AutomationHandler:
     
     def click_api_type_button(self, window_id: str):
         """Click the API type button (FIX or IB_API)."""
-        self.log(f"=== Configuring API Type: {self.config.api_type} ===")
+        self.log(f"--- Configuring API Type: {self.config.api_type} ---")
         
         if self.config.api_type == "FIX":
             self.click_at_coordinates(
@@ -113,7 +113,7 @@ class AutomationHandler:
     
     def click_trading_mode_button(self, window_id: str):
         """Click the trading mode button (LIVE or PAPER)."""
-        self.log(f"=== Configuring Trading Mode: {self.config.trading_mode} ===")
+        self.log(f"--- Configuring Trading Mode: {self.config.trading_mode} ---")
         
         if self.config.trading_mode == "LIVE":
             self.click_at_coordinates(
@@ -137,7 +137,7 @@ class AutomationHandler:
             self.log("Skipping username entry (IB_USERNAME not set)")
             return
         
-        self.log("=== Typing Username ===")
+        self.log("--- Typing Username ---")
         self.run_xdotool("type", "--delay", "50", self.config.username)
         time.sleep(0.5)
         self.log("✓ Username typed")
@@ -148,7 +148,7 @@ class AutomationHandler:
             self.log("Skipping password entry (IB_PASSWORD not set)")
             return
         
-        self.log("=== Typing Password ===")
+        self.log("--- Typing Password ---")
         self.run_xdotool("key", "Tab")
         time.sleep(0.3)
         self.run_xdotool("type", "--delay", "50", self.config.password)
@@ -158,7 +158,7 @@ class AutomationHandler:
     
     def list_all_windows(self):
         """List all windows with their IDs and names."""
-        self.log("=== Listing All Windows ===")
+        self.log("--- Listing All Windows ---")
         window_ids_output = self.run_xdotool("search", "--all", ".")
         if not window_ids_output:
             self.log("No windows found")
@@ -266,7 +266,7 @@ class AutomationHandler:
         self.type_password(window_id)
         
         self.log("")
-        self.log("=== Configuration Complete ===")
+        self.log("--- Configuration Complete ---")
         self.log(f"API Type: {self.config.api_type}")
         self.log(f"Trading Mode: {self.config.trading_mode}")
         

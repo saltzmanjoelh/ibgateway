@@ -53,7 +53,7 @@ class Config:
     
     def print_config(self):
         """Print current configuration."""
-        print("=== IB Gateway Configuration ===")
+        print("--- IB Gateway Configuration ---")
         print(f"Username: {self.username if self.username else '(not set)'}")
         print(f"Password: {'***' if self.password else '(not set)'}")
         print(f"API Type: {self.api_type}")

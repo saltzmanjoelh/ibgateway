@@ -151,7 +151,7 @@ class IBGatewayCLI:
         print(f"Screenshot server starting on port {port}")
         print(f"Screenshots directory: {self.config.screenshot_dir}")
         print(f"Access the service at: http://localhost:{port}/")
-        print(f"=== Screenshot service ready on port {port} ===")
+        print(f"--- Screenshot service ready on port {port} ---")
         
         try:
             server.serve_forever()
@@ -229,7 +229,7 @@ class IBGatewayCLI:
             print(f"ERROR: Test image not found: {test_image_path}")
             return 1
         
-        print("=== Step 1: Taking current screenshot ===")
+        print("--- Step 1: Taking current screenshot ---")
         handler = ScreenshotHandler(self.config, verbose)
         current_screenshot_path = handler.take_screenshot()
         
@@ -240,7 +240,7 @@ class IBGatewayCLI:
         print(f"✓ Screenshot taken: {current_screenshot_path}")
         print()
         
-        print("=== Step 2: Comparing screenshots ===")
+        print("--- Step 2: Comparing screenshots ---")
         return self._compare_screenshots(test_image_path, current_screenshot_path, threshold)
     
     def _install_ibgateway(self, verbose: bool, use_latest: bool = False) -> int:
@@ -251,7 +251,7 @@ class IBGatewayCLI:
             use_latest: If True, use latest version; if False, use stable (default)
         """
         version = "latest" if use_latest else "stable"
-        print(f"=== Starting IB Gateway installation ({version} version) ===")
+        print(f"--- Starting IB Gateway installation ({version} version) ---")
         
         installer_url = f"https://download2.interactivebrokers.com/installers/ibgateway/{version}-standalone/ibgateway-{version}-standalone-linux-x64.sh"
         installer_path = "/tmp/install-ibgateway.sh"
@@ -275,7 +275,7 @@ class IBGatewayCLI:
                 check=True
             )
             
-            print("=== IB Gateway installation completed ===")
+            print("--- IB Gateway installation completed ---")
             print(f"Installation log available at {log_path}")
             return 0
         except subprocess.CalledProcessError as e:
@@ -290,14 +290,14 @@ class IBGatewayCLI:
         env = os.environ.copy()
         env["DISPLAY"] = self.config.display
         
-        print("=== Starting Xvfb ===")
+        print("--- Starting Xvfb ---")
         xvfb_process = subprocess.Popen(
             ["Xvfb", self.config.display, "-screen", "0", f"{self.config.resolution}x24", "-ac", "+extension", "GLX", "+render", "-noreset"],
             env=env
         )
         time.sleep(2)
         
-        print("=== Starting IB Gateway ===")
+        print("--- Starting IB Gateway ---")
         ibgateway_process = subprocess.Popen(
             ["/opt/ibgateway/ibgateway"],
             env=env

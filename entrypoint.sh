@@ -1,5 +1,6 @@
 #!/bin/bash
 # Enable debug output only if DEBUG environment variable is set (default: off)
+echo "=== IBGateway ==="
 DEBUG_MODE=0
 if [ "${DEBUG:-0}" = "1" ] || [ "${DEBUG:-0}" = "true" ]; then
     set -x
@@ -135,24 +136,41 @@ wait_for_port_forwarding() {
     return 0  # Don't fail on this, as IB Gateway ports may not be available yet
 }
 
+# Create log files
+debug_echo "=== Create and stream logs ==="
+touch /tmp/automation.log
+touch /tmp/port-forward.log
+touch /tmp/screenshot-server.log
+touch /tmp/websockify.log
+touch /tmp/x11vnc.log
+
+# When DEBUG is off, only show automation logs; when DEBUG is on, show all logs
+# Use --follow=name --retry to handle files that may not exist yet
+if [ "$DEBUG_MODE" = "1" ]; then
+    tail -f /tmp/x11vnc.log /tmp/websockify.log /tmp/automation.log /tmp/screenshot-server.log /tmp/port-forward.log 2>/dev/null &
+else
+    tail -f /tmp/automation.log 2>/dev/null &
+fi
+TAIL_PID=$!
+
 # Start Xvfb on display :99
-debug_echo "=== Starting Xvfb on display :99 ==="
+echo "=== Starting Xvfb on display :99 ==="
 Xvfb :99 -screen 0 ${RESOLUTION}x24 -ac +extension GLX +render -noreset &
 XVFB_PID=$!
 export DISPLAY=:99
 wait_for_xvfb || exit 1
 
 # Start a simple window manager and xterm for testing
-debug_echo "=== Starting window manager ==="
+echo "=== Starting window manager ==="
 xterm -geometry 80x24+0+0 -e /bin/bash &
 
 # Start x11vnc on port 5901 (VNC server)
-debug_echo "=== Starting x11vnc on port 5901 ==="
+echo "=== Starting x11vnc on port 5901 ==="
 x11vnc -display :99 -noxdamage -forever -shared -rfbport 5901 -bg -o /tmp/x11vnc.log
 wait_for_vnc || exit 1
 
 # Debug: Check websockify availability
-debug_echo "=== Checking websockify installation ==="
+echo "=== Checking websockify installation ==="
 if command -v websockify &> /dev/null; then
     debug_echo "websockify found: $(which websockify)"
 else
@@ -162,9 +180,8 @@ fi
 # Start noVNC proxy with verbose logging
 # websockify listens on 5900 (web access) and proxies to VNC on 5901
 # Runs in background - output logged to file and tailed for container logs
-debug_echo "=== Starting noVNC proxy with verbose logging ==="
-# Create log file
-touch /tmp/websockify.log
+echo "=== Starting noVNC proxy with verbose logging ==="
+
 
 # Use websockify as installed Python package
 # Format: websockify --web=<web_dir> <listen_port> <vnc_host>:<vnc_port>
@@ -187,22 +204,21 @@ debug_echo "USER=$USER"
 debug_echo "DISPLAY=$DISPLAY"
 
 # Start IB Gateway
-debug_echo "=== Starting IB Gateway ==="
+echo "=== Starting IB Gateway ==="
 /opt/ibgateway/ibgateway &
 IBGATEWAY_PID=$!
-debug_echo "IB Gateway started (PID: $IBGATEWAY_PID)"
+echo "IB Gateway started (PID: $IBGATEWAY_PID)"
 
 # Wait for IB Gateway window to appear, then automate configuration
-debug_echo "=== Waiting for IB Gateway to start, then automating configuration ==="
+echo "=== Waiting for IB Gateway to start, then automating configuration ==="
 sleep 5
-touch /tmp/automation.log
+
 python3 /ibgateway_cli.py automate > /tmp/automation.log 2>&1 &
 AUTOMATE_PID=$!
-debug_echo "Automation script started (PID: $AUTOMATE_PID)"
+echo "Automation script started (PID: $AUTOMATE_PID)"
 
 # Start screenshot HTTP server on port 8080
-debug_echo "=== Starting screenshot HTTP server on port 8080 ==="
-touch /tmp/screenshot-server.log
+echo "=== Starting screenshot HTTP server on port 8080 ==="
 python3 /ibgateway_cli.py screenshot-server --port 8080 > /tmp/screenshot-server.log 2>&1 &
 SCREENSHOT_PID=$!
 debug_echo "Screenshot server started (PID: $SCREENSHOT_PID)"
@@ -213,8 +229,7 @@ wait_for_automation
 
 # Start socat port forwarding for IB Gateway
 # IB Gateway only accepts connections from 127.0.0.1, so we forward external ports
-debug_echo "=== Starting socat port forwarding ==="
-touch /tmp/port-forward.log
+echo "=== Starting socat port forwarding ==="
 python3 /ibgateway_cli.py port-forward > /tmp/port-forward.log 2>&1 &
 PORT_FORWARD_PID=$!
 debug_echo "Port forwarding started (PID: $PORT_FORWARD_PID)"
@@ -222,7 +237,7 @@ wait_for_port_forwarding
 
 # Verify all services are ready
 debug_echo ""
-debug_echo "=== Verifying all services ==="
+echo "=== Verifying all services ==="
 wait_for_xvfb && debug_echo "✓ Xvfb: Ready" || debug_echo "✗ Xvfb: Not ready"
 wait_for_vnc && debug_echo "✓ VNC: Ready" || debug_echo "✗ VNC: Not ready"
 wait_for_novnc && debug_echo "✓ noVNC: Ready" || debug_echo "✗ noVNC: Not ready"
@@ -235,8 +250,7 @@ else
 fi
 
 debug_echo ""
-debug_echo "=== All services ready ==="
-debug_echo "Container is ready. Streaming logs..."
+echo "=== All services ready ==="
 
 # Keep container running by tailing log files
 # Use trap to handle signals gracefully
@@ -247,19 +261,6 @@ cleanup() {
 }
 
 trap cleanup SIGTERM SIGINT
-
-# Ensure all log files exist
-touch /tmp/x11vnc.log /tmp/websockify.log /tmp/automation.log /tmp/screenshot-server.log /tmp/port-forward.log 2>/dev/null || true
-
-# Tail log files to keep container running and show output
-# When DEBUG is off, only show automation logs; when DEBUG is on, show all logs
-# Use --follow=name --retry to handle files that may not exist yet
-if [ "$DEBUG_MODE" = "1" ]; then
-    tail -f /tmp/x11vnc.log /tmp/websockify.log /tmp/automation.log /tmp/screenshot-server.log /tmp/port-forward.log 2>/dev/null &
-else
-    tail -f /tmp/automation.log 2>/dev/null &
-fi
-TAIL_PID=$!
 
 # Wait for tail process (which will run until killed)
 wait $TAIL_PID
