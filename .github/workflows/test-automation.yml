@@ -183,12 +183,11 @@ jobs:
           (matrix.config.api_type == 'IB_API' && matrix.config.trading_mode == 'PAPER') ||
           (matrix.config.api_type == 'FIX' && matrix.config.trading_mode == 'LIVE')
         run: |
-          chmod +x scripts/compare-test-screenshot.sh
-          TEST_SHOT="test-screenshots/ibapi-paper.png"
+          TEST_SHOT="/test-screenshots/ibapi-paper.png"
           if [ "${{ matrix.config.api_type }}" = "FIX" ] && [ "${{ matrix.config.trading_mode }}" = "LIVE" ]; then
-            TEST_SHOT="test-screenshots/fix-live.png"
+            TEST_SHOT="/test-screenshots/fix-live.png"
           fi
-          ./scripts/compare-test-screenshot.sh ${{ matrix.config.name }} ${{ matrix.config.screenshot_port }} "$TEST_SHOT"
+          docker exec ${{ matrix.config.name }} python3 /ibgateway_cli.py test-screenshot "$TEST_SHOT"
 
       - name: Download comparison screenshot
         run: |

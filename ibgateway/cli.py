@@ -58,6 +58,11 @@ class IBGatewayCLI:
         compare_parser.add_argument("image2", help="Second image path")
         compare_parser.add_argument("--threshold", type=float, default=0.01, help="Similarity threshold")
         
+        # test-screenshot subcommand
+        test_parser = subparsers.add_parser("test-screenshot", help="Take a screenshot and compare with test image")
+        test_parser.add_argument("test_image", help="Path to test/reference screenshot")
+        test_parser.add_argument("--threshold", type=float, default=0.01, help="Similarity threshold")
+        
         # install subcommand
         install_parser = subparsers.add_parser("install", help="Install IB Gateway")
         install_parser.add_argument(
@@ -115,6 +120,13 @@ class IBGatewayCLI:
                 parsed_args.image1,
                 parsed_args.image2,
                 parsed_args.threshold
+            )
+        
+        elif parsed_args.command == "test-screenshot":
+            return self._test_screenshot(
+                parsed_args.test_image,
+                parsed_args.threshold,
+                verbose
             )
         
         elif parsed_args.command == "install":
@@ -210,6 +222,26 @@ class IBGatewayCLI:
             return 1
         
         return 0
+    
+    def _test_screenshot(self, test_image_path: str, threshold: float, verbose: bool) -> int:
+        """Take a screenshot and compare it with a test image."""
+        if not os.path.exists(test_image_path):
+            print(f"ERROR: Test image not found: {test_image_path}")
+            return 1
+        
+        print("=== Step 1: Taking current screenshot ===")
+        handler = ScreenshotHandler(self.config, verbose)
+        current_screenshot_path = handler.take_screenshot()
+        
+        if not current_screenshot_path:
+            print("ERROR: Failed to take screenshot")
+            return 1
+        
+        print(f"✓ Screenshot taken: {current_screenshot_path}")
+        print()
+        
+        print("=== Step 2: Comparing screenshots ===")
+        return self._compare_screenshots(test_image_path, current_screenshot_path, threshold)
     
     def _install_ibgateway(self, verbose: bool, use_latest: bool = False) -> int:
         """Install IB Gateway.
