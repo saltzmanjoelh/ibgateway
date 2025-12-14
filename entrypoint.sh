@@ -185,6 +185,7 @@ echo "IB Gateway started (PID: $IBGATEWAY_PID)"
 
 # Wait for IB Gateway window to appear, then automate configuration
 echo "=== Waiting for IB Gateway to start, then automating configuration ==="
+sleep 5
 touch /tmp/automation.log
 python3 /ibgateway_cli.py automate > /tmp/automation.log 2>&1 &
 AUTOMATE_PID=$!
