@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .config import Config
+from .screenshot import ScreenshotHandler
 from .services import XvfbManager, VNCManager, NoVNCManager, WindowManager
 from .port_forwarder import PortForwarder
 
@@ -223,6 +224,16 @@ class ServiceOrchestrator:
         
         # Start window manager
         self.window_manager.start()
+
+        # Capture "initial state" screenshot (with xterm window present).
+        # This is helpful for CI artifact debugging and should be best-effort.
+        try:
+            time.sleep(1)  # give xterm a moment to render
+            screenshotter = ScreenshotHandler(self.config, verbose=self.verbose)
+            screenshotter.take_screenshot(os.path.join(self.config.screenshot_dir, "initial_state.png"))
+        except Exception as e:
+            self.log(f"WARNING: Failed to capture initial_state screenshot: {e}")
+
         # The current "window manager" implementation launches an xterm; close it
         # so it doesn't obstruct the IBGateway UI in VNC/noVNC.
         try:
@@ -230,6 +241,14 @@ class ServiceOrchestrator:
         except Exception as e:
             self.log(f"ERROR: Failed to close terminal window before starting IB Gateway: {e}")
             return 1
+
+        # Capture screenshot after closing the terminal window.
+        try:
+            time.sleep(0.5)
+            screenshotter = ScreenshotHandler(self.config, verbose=self.verbose)
+            screenshotter.take_screenshot(os.path.join(self.config.screenshot_dir, "after_close_terminal.png"))
+        except Exception as e:
+            self.log(f"WARNING: Failed to capture after_close_terminal screenshot: {e}")
         
         # Start VNC
         if not self.vnc.start():
