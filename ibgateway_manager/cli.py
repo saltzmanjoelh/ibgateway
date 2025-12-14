@@ -198,9 +198,14 @@ class IBGatewayCLI:
             )
 
             # Verify IB Gateway installation
-            if not os.path.exists("/opt/ibgateway/ibgateway"):
+            ibgateway_exec = self._find_ibgateway_executable()
+            if not ibgateway_exec:
                 print("ERROR: IB Gateway executable not found in expected location")
+                print("Searched locations:")
+                for p in self._candidate_ibgateway_paths():
+                    print(f"  - {p}")
                 return 1
+            print(f"✓ IB Gateway found at: {ibgateway_exec}")
 
             try:
                 if os.path.exists(installer_path):
@@ -217,4 +222,48 @@ class IBGatewayCLI:
         except Exception as e:
             print(f"ERROR: {e}")
             return 1
+
+    def _candidate_ibgateway_paths(self) -> List[str]:
+        """Common places IB Gateway installs across Docker + GitHub Actions + local.
+
+        Note: The standalone installer chooses a user-writable location on GitHub
+        Actions runners (e.g. /home/runner/ibgateway), while our Docker image uses
+        /opt/ibgateway.
+        """
+        candidates: List[str] = []
+
+        # Allow callers/CI to override explicitly.
+        explicit_exec = os.environ.get("IBGATEWAY_EXECUTABLE") or os.environ.get("IBGATEWAY_PATH")
+        if explicit_exec:
+            candidates.append(explicit_exec)
+
+        explicit_home = os.environ.get("IBGATEWAY_HOME")
+        if explicit_home:
+            candidates.append(os.path.join(explicit_home, "ibgateway"))
+
+        # Docker (root) default in this repo.
+        candidates.append("/opt/ibgateway/ibgateway")
+
+        # Common non-root install locations (GitHub Actions runner uses $HOME/ibgateway).
+        home = os.path.expanduser("~")
+        candidates.append(os.path.join(home, "ibgateway", "ibgateway"))
+
+        user = os.environ.get("USER")
+        if user:
+            candidates.append(f"/home/{user}/ibgateway/ibgateway")
+
+        # De-duplicate while preserving order.
+        seen = set()
+        ordered: List[str] = []
+        for p in candidates:
+            if p and p not in seen:
+                seen.add(p)
+                ordered.append(p)
+        return ordered
+
+    def _find_ibgateway_executable(self) -> Optional[str]:
+        for path in self._candidate_ibgateway_paths():
+            if os.path.isfile(path) and os.access(path, os.X_OK):
+                return path
+        return None
     
