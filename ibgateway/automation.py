@@ -4,6 +4,7 @@ IB Gateway GUI automation handler using xdotool.
 
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Optional
@@ -32,9 +33,9 @@ class AutomationHandler:
     def log(self, message: str):
         """Print log message if verbose."""
         if self.verbose:
-            print(f"[AUTOMATION] {message}")
+            print(f"[AUTOMATION] {message}", flush=True)
         else:
-            print(message)
+            print(message, flush=True)
     
     def run_xdotool(self, *args) -> Optional[str]:
         """Run xdotool command and return output."""
@@ -235,6 +236,56 @@ class AutomationHandler:
         )
         return True
     
+    def wait_for_pre_credentials_state(self, timeout: int = 30) -> bool:
+        """Wait until screenshot matches pre_credentials_state.png reference image."""
+        project_root = Path(__file__).resolve().parent.parent
+        reference_path = project_root / "test-screenshots" / "pre_credentials_state.png"
+        
+        if not reference_path.exists():
+            self.log(
+                f"WARNING: Reference screenshot not found: {reference_path}. "
+                "Skipping pre-credentials state check."
+            )
+            return True  # Don't fail if reference doesn't exist
+        
+        self.log("Waiting for window to reach pre-credentials state...")
+        screenshotter = ScreenshotHandler(self.config, verbose=self.verbose)
+        
+        elapsed = 0
+        while elapsed < timeout:
+            current_path = os.path.join(self.config.screenshot_dir, "pre_credentials_state_check.png")
+            current = screenshotter.take_screenshot(current_path)
+            if not current:
+                self.log("ERROR: Failed to capture screenshot for state check")
+                time.sleep(1)
+                elapsed += 1
+                continue
+            
+            try:
+                result = compare_images_pil(str(reference_path), current, threshold=0.01, max_diff_percentage=5.0)
+                
+                if result["is_match"]:
+                    self.log(
+                        f"✓ Pre-credentials state reached "
+                        f"(mean_diff={result['mean_diff']:.2f}, diff_percentage={result['diff_percentage']:.2f}%)"
+                    )
+                    return True
+                
+                # Log progress every 5 seconds
+                if elapsed % 5 == 0:
+                    self.log(
+                        f"Waiting... (mean_diff={result['mean_diff']:.2f}, "
+                        f"diff_percentage={result['diff_percentage']:.2f}%)"
+                    )
+            except Exception as e:
+                self.log(f"WARNING: Failed to compare screenshots: {e}")
+            
+            time.sleep(1)
+            elapsed += 1
+        
+        self.log(f"WARNING: Pre-credentials state not reached after {timeout}s, continuing anyway...")
+        return False  # Don't fail, but log warning
+    
     def automate(self) -> int:
         """Main automation function."""
         self.config.print_config()
@@ -245,6 +296,10 @@ class AutomationHandler:
             return 1
         
         self.log(f"Content window ID: {window_id}")
+        
+        # Wait until screenshot matches pre_credentials_state.png
+        self.wait_for_pre_credentials_state()
+        
         self.move_window_to_top_left(window_id)
         self.log("Waiting for window to fully render...")
         time.sleep(2)
