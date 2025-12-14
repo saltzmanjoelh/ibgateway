@@ -223,6 +223,12 @@ class ServiceOrchestrator:
         
         # Start window manager
         self.window_manager.start()
+        # The current "window manager" implementation launches an xterm; close it
+        # so it doesn't obstruct the IBGateway UI in VNC/noVNC.
+        try:
+            self.window_manager.close_terminal_windows()
+        except Exception:
+            pass
         
         # Start VNC
         if not self.vnc.start():

@@ -409,6 +409,48 @@ class WindowManager:
         except Exception as e:
             self.log(f"ERROR: Failed to start window manager: {e}")
             return False
+
+    def _run_xdotool(self, *args) -> Optional[str]:
+        """Run xdotool on this DISPLAY and return stdout, if any."""
+        env = os.environ.copy()
+        env["DISPLAY"] = self.config.display
+        try:
+            result = subprocess.run(
+                ["xdotool", *args],
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                return None
+            return result.stdout.strip()
+        except Exception:
+            return None
+
+    def close_terminal_windows(self) -> None:
+        """
+        Close any visible xterm windows before launching IBGateway.
+
+        In the current container, the "window manager" is implemented by starting an xterm.
+        That terminal can obstruct the IBGateway UI; this method closes those xterm windows
+        without affecting other applications (IBGateway is not an xterm).
+        """
+        # xterm class is typically "XTerm". Retry briefly in case the window
+        # hasn't been mapped yet.
+        for _ in range(15):
+            window_ids = self._run_xdotool("search", "--class", "XTerm") or ""
+            ids = [wid.strip() for wid in window_ids.split() if wid.strip()]
+            if not ids:
+                time.sleep(0.2)
+                continue
+
+            for wid in ids:
+                # Prefer a polite close request; fall back to killing the window if needed.
+                if self._run_xdotool("windowclose", wid) is None:
+                    self._run_xdotool("windowkill", wid)
+                time.sleep(0.1)
+            return
     
     def stop(self):
         """Stop window manager."""
