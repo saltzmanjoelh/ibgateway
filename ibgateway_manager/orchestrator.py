@@ -38,7 +38,7 @@ class ServiceOrchestrator:
         
         # Log files
         self.log_files = [
-            "/tmp/automation.log",
+            "/tmp/automate-ibgateway.log",
             "/tmp/port-forward.log",
             "/tmp/screenshot-server.log",
             "/tmp/websockify.log",
@@ -79,7 +79,7 @@ class ServiceOrchestrator:
         else:
             # Only tail automation log in normal mode
             self.tail_process = subprocess.Popen(
-                ["tail", "-f", "/tmp/automation.log"],
+                ["tail", "-f", "/tmp/automate-ibgateway.log"],
                 stdout=sys.stdout,
                 stderr=sys.stderr
             )
@@ -117,8 +117,8 @@ class ServiceOrchestrator:
         
         for i in range(timeout):
             # Check log file for completion message
-            if Path("/tmp/automation.log").exists():
-                log_content = Path("/tmp/automation.log").read_text()
+            if Path("/tmp/automate-ibgateway.log").exists():
+                log_content = Path("/tmp/automate-ibgateway.log").read_text()
                 if "Configuration Complete" in log_content:
                     self.log("✓ Automation completed")
                     return True
@@ -126,8 +126,8 @@ class ServiceOrchestrator:
             # Also check if process is still running
             if self.automation_process and self.automation_process.poll() is not None:
                 # Process finished, check log one more time
-                if Path("/tmp/automation.log").exists():
-                    log_content = Path("/tmp/automation.log").read_text()
+                if Path("/tmp/automate-ibgateway.log").exists():
+                    log_content = Path("/tmp/automate-ibgateway.log").read_text()
                     if "Configuration Complete" in log_content:
                         self.log("✓ Automation completed")
                         return True
@@ -138,8 +138,8 @@ class ServiceOrchestrator:
             time.sleep(1)
         
         # Final check
-        if Path("/tmp/automation.log").exists():
-            log_content = Path("/tmp/automation.log").read_text()
+        if Path("/tmp/automate-ibgateway.log").exists():
+            log_content = Path("/tmp/automate-ibgateway.log").read_text()
             if "Configuration Complete" in log_content:
                 self.log("✓ Automation completed")
                 return True
@@ -192,8 +192,8 @@ class ServiceOrchestrator:
         port_forward_ready = self._wait_for_port_forwarding(timeout=1)
         
         automation_ready = False
-        if Path("/tmp/automation.log").exists():
-            log_content = Path("/tmp/automation.log").read_text()
+        if Path("/tmp/automate-ibgateway.log").exists():
+            log_content = Path("/tmp/automate-ibgateway.log").read_text()
             automation_ready = "Configuration Complete" in log_content or (
                 self.automation_process and self.automation_process.poll() is not None
             )
@@ -272,7 +272,7 @@ class ServiceOrchestrator:
         
         # Start automation in background
         try:
-            with open("/tmp/automation.log", "w") as log_f:
+            with open("/tmp/automate-ibgateway.log", "w") as log_f:
                 self.automation_process = subprocess.Popen(
                     [sys.executable, "-u", cli_script, "automate-ibgateway"],
                     stdout=log_f,

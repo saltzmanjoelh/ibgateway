@@ -10,7 +10,7 @@ import time
 from typing import Optional, Dict, List
 
 from .config import Config
-from .automation import AutomationHandler
+from .automate_ibgateway import AutomationHandler
 from .screenshot import ScreenshotHandler
 from .screenshot_server import ScreenshotServer
 from .port_forwarder import PortForwarder
@@ -156,7 +156,8 @@ class IBGatewayCLI:
             return self._install_ibgateway(verbose, use_latest)
         
         elif parsed_args.command == "start-ibgateway":
-            return self._run_ibgateway(verbose)
+            handler = AutomationHandler(self.config, verbose)
+            return handler.run_ibgateway()
         
         elif parsed_args.command == "port-forward":
             handler = PortForwarder(self.config, verbose)
@@ -217,30 +218,3 @@ class IBGatewayCLI:
             print(f"ERROR: {e}")
             return 1
     
-    def _run_ibgateway(self, verbose: bool) -> int:
-        """Run IB Gateway."""
-        env = os.environ.copy()
-        env["DISPLAY"] = self.config.display
-        
-        print("--- Starting Xvfb ---")
-        xvfb_process = subprocess.Popen(
-            ["Xvfb", self.config.display, "-screen", "0", f"{self.config.resolution}x24", "-ac", "+extension", "GLX", "+render", "-noreset"],
-            env=env
-        )
-        time.sleep(2)
-        
-        print("--- Starting IB Gateway ---")
-        ibgateway_process = subprocess.Popen(
-            ["/opt/ibgateway/ibgateway"],
-            env=env
-        )
-        time.sleep(15)
-        
-        # Keep running
-        try:
-            ibgateway_process.wait()
-        except KeyboardInterrupt:
-            xvfb_process.terminate()
-            ibgateway_process.terminate()
-        
-        return 0

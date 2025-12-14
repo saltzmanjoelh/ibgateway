@@ -326,4 +326,32 @@ class AutomationHandler:
         self.log(f"Trading Mode: {self.config.trading_mode}")
         
         return 0
+    
+    def run_ibgateway(self) -> int:
+        """Run IB Gateway with minimal setup (Xvfb + IB Gateway)."""
+        env = os.environ.copy()
+        env["DISPLAY"] = self.config.display
+        
+        self.log("--- Starting Xvfb ---")
+        xvfb_process = subprocess.Popen(
+            ["Xvfb", self.config.display, "-screen", "0", f"{self.config.resolution}x24", "-ac", "+extension", "GLX", "+render", "-noreset"],
+            env=env
+        )
+        time.sleep(2)
+        
+        self.log("--- Starting IB Gateway ---")
+        ibgateway_process = subprocess.Popen(
+            ["/opt/ibgateway/ibgateway"],
+            env=env
+        )
+        time.sleep(15)
+        
+        # Keep running
+        try:
+            ibgateway_process.wait()
+        except KeyboardInterrupt:
+            xvfb_process.terminate()
+            ibgateway_process.terminate()
+        
+        return 0
 
