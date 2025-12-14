@@ -187,7 +187,7 @@ jobs:
           if [ "${{ matrix.config.api_type }}" = "FIX" ] && [ "${{ matrix.config.trading_mode }}" = "LIVE" ]; then
             TEST_SHOT="/test-screenshots/fix-live.png"
           fi
-          docker exec ${{ matrix.config.name }} python3 /ibgateway_cli.py test-screenshot "$TEST_SHOT"
+          docker exec ${{ matrix.config.name }} python3 /ibgateway_manager_cli.py test-screenshot "$TEST_SHOT"
 
       - name: Download comparison screenshot
         run: |
