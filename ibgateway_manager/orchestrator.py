@@ -223,6 +223,13 @@ class ServiceOrchestrator:
         
         # Start window manager
         self.window_manager.start()
+        # The current "window manager" implementation launches an xterm; close it
+        # so it doesn't obstruct the IBGateway UI in VNC/noVNC.
+        try:
+            self.window_manager.close_terminal_windows()
+        except Exception as e:
+            self.log(f"ERROR: Failed to close terminal window before starting IB Gateway: {e}")
+            return 1
         
         # Start VNC
         if not self.vnc.start():

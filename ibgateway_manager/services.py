@@ -6,7 +6,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from .config import Config
 
@@ -409,6 +409,82 @@ class WindowManager:
         except Exception as e:
             self.log(f"ERROR: Failed to start window manager: {e}")
             return False
+
+    def _run_xdotool(self, *args) -> Optional[str]:
+        """Run xdotool on this DISPLAY and return stdout, if any."""
+        env = os.environ.copy()
+        env["DISPLAY"] = self.config.display
+        try:
+            result = subprocess.run(
+                ["xdotool", *args],
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                return None
+            return result.stdout.strip()
+        except Exception:
+            return None
+
+    def _search_xterm_windows(self, pid: Optional[int] = None) -> List[str]:
+        """
+        Return a list of visible XTerm window IDs.
+
+        If pid is provided, only returns XTerm windows belonging to that process.
+        """
+        cmd = ["search", "--onlyvisible", "--class", "XTerm"]
+        if pid is not None:
+            cmd.extend(["--pid", str(pid)])
+
+        out = self._run_xdotool(*cmd)
+        if not out:
+            return []
+        return [wid.strip() for wid in out.split() if wid.strip()]
+
+    def close_terminal_windows(self) -> None:
+        """
+        Close the visible xterm window before launching IBGateway.
+
+        In the current container, the "window manager" is implemented by starting an xterm.
+        That terminal can obstruct the IBGateway UI; this method closes that xterm window
+        and fails if it cannot be closed.
+        """
+        # Wait briefly for the xterm window to be mapped.
+        pid = self.process.pid if self.process else None
+        for _ in range(20):
+            if self._search_xterm_windows(pid=pid) or self._search_xterm_windows():
+                break
+            time.sleep(0.2)
+
+        before_ids = self._search_xterm_windows()
+        before_count = len(before_ids)
+        if before_count == 0:
+            raise RuntimeError("Expected an XTerm window to exist, but none were found")
+
+        # Close exactly one XTerm window: prefer the one we started.
+        target_ids = self._search_xterm_windows(pid=pid) if pid is not None else []
+        target_id = (target_ids[0] if target_ids else before_ids[0])
+
+        # Attempt close -> kill as fallback.
+        closed = self._run_xdotool("windowclose", target_id) is not None
+        if not closed:
+            closed = self._run_xdotool("windowkill", target_id) is not None
+        if not closed:
+            raise RuntimeError(f"Failed to close XTerm window {target_id}")
+
+        # Validate window count decreased by exactly 1.
+        for _ in range(20):
+            after_count = len(self._search_xterm_windows())
+            if after_count == before_count - 1:
+                return
+            time.sleep(0.2)
+
+        after_count = len(self._search_xterm_windows())
+        raise RuntimeError(
+            f"XTerm window count did not decrease by 1 (before={before_count}, after={after_count})"
+        )
     
     def stop(self):
         """Stop window manager."""
