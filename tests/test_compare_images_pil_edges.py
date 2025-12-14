@@ -4,7 +4,7 @@ import unittest
 
 from PIL import Image
 
-from ibgateway.screenshot import compare_images_pil
+from ibgateway_manager.screenshot import compare_images_pil
 
 
 class TestCompareImagesPilEdges(unittest.TestCase):

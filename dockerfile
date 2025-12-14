@@ -16,8 +16,8 @@ RUN ln -s /opt/novnc/vnc.html /opt/novnc/index.html
 RUN cd /opt/novnc/utils/websockify && pip3 install .
 
 # 2. Copy CLI package and Poetry configuration, then install Python dependencies
-COPY ibgateway/ /ibgateway/
-COPY ibgateway_cli.py /ibgateway_cli.py
+COPY ibgateway_manager/ /ibgateway_manager/
+COPY ibgateway_manager_cli.py /ibgateway_manager_cli.py
 COPY pyproject.toml /pyproject.toml
 COPY test-screenshots/ /test-screenshots/
 

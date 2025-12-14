@@ -178,7 +178,7 @@ docker run --platform linux/amd64 \
 
 ## Python CLI Tool
 
-The repository includes a Python CLI tool (`ibgateway_cli.py`) for automation, testing, and screenshot management. All commands execute inside the Docker container - no host dependencies required!
+The repository includes a Python CLI tool (`ibgateway_manager_cli.py`) for automation, testing, and screenshot management. All commands execute inside the Docker container - no host dependencies required!
 
 ### Installation
 
@@ -261,7 +261,7 @@ done
 
 **Automate IB Gateway configuration**:
 ```bash
-docker exec ibgateway python3 /ibgateway_cli.py automate-ibgateway \
+docker exec ibgateway python3 /ibgateway_manager_cli.py automate-ibgateway \
   --username myusername \
   --password mypassword \
   --api-type IB_API
@@ -269,17 +269,17 @@ docker exec ibgateway python3 /ibgateway_cli.py automate-ibgateway \
 
 **Take a screenshot**:
 ```bash
-docker exec ibgateway python3 /ibgateway_cli.py screenshot --output /path/to/screenshot.png
+docker exec ibgateway python3 /ibgateway_manager_cli.py screenshot --output /path/to/screenshot.png
 ```
 
 **Start screenshot HTTP server**:
 ```bash
-docker exec ibgateway python3 /ibgateway_cli.py screenshot-server --port 8080
+docker exec ibgateway python3 /ibgateway_manager_cli.py screenshot-server --port 8080
 ```
 
 **Compare two screenshots**:
 ```bash
-docker exec ibgateway python3 /ibgateway_cli.py compare-screenshots screenshot1.png screenshot2.png
+docker exec ibgateway python3 /ibgateway_manager_cli.py compare-screenshots screenshot1.png screenshot2.png
 ```
 
 ## Testing
@@ -292,7 +292,7 @@ docker run -d --name ibgateway --platform linux/amd64 \
   ibgateway:latest
 
 # Compare screenshots
-docker exec ibgateway python3 /ibgateway_cli.py compare-screenshots screenshot1.png screenshot2.png
+docker exec ibgateway python3 /ibgateway_manager_cli.py compare-screenshots screenshot1.png screenshot2.png
 ```
 
 **Note**: All CLI commands must be executed inside the container using `docker exec`. Replace `ibgateway` with your container name if different.

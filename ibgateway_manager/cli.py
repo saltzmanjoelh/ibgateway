@@ -195,6 +195,17 @@ class IBGatewayCLI:
                 [installer_path, "-q", "-f", log_path],
                 check=True
             )
+
+            # Verify IB Gateway installation
+            if not os.path.exists("/opt/ibgateway/ibgateway"):
+                print("ERROR: IB Gateway executable not found in expected location")
+                return 1
+
+            try:
+                if os.path.exists(installer_path):
+                    os.remove(installer_path)
+            except Exception as cleanup_exc:
+                print(f"WARNING: Failed to clean up installer file: {cleanup_exc}")
             
             print("--- IB Gateway installation completed ---")
             print(f"Installation log available at {log_path}")

@@ -73,10 +73,10 @@ if ! $PYTHON_BIN -c "import PIL; import dotenv" 2>/dev/null; then
     echo "WARNING: Some Python dependencies may not be installed correctly"
 fi
 
-# Make ibgateway_cli.py executable if it exists
+# Make ibgateway_manager_cli.py executable if it exists
 # Try common locations (Docker root, workspace root, current directory)
 IBGATEWAY_CLI=""
-for cli_path in /ibgateway_cli.py /workspace/ibgateway_cli.py ./ibgateway_cli.py; do
+for cli_path in /ibgateway_manager_cli.py /workspace/ibgateway_manager_cli.py ./ibgateway_manager_cli.py; do
     if [ -f "$cli_path" ]; then
         chmod +x "$cli_path"
         IBGATEWAY_CLI="$cli_path"
@@ -85,29 +85,37 @@ for cli_path in /ibgateway_cli.py /workspace/ibgateway_cli.py ./ibgateway_cli.py
     fi
 done
 
-# Install IB Gateway using CLI tool (if found)
-if [ -n "$IBGATEWAY_CLI" ]; then
-    echo "=== Installing IB Gateway ==="
-    $PYTHON_BIN "$IBGATEWAY_CLI" install
-    
-    # Verify IB Gateway installation
-    # Check common installation locations
-    IBGATEWAY_EXEC=""
-    for ibg_path in /opt/ibgateway/ibgateway /home/$USER/ibgateway/ibgateway "$HOME/ibgateway/ibgateway"; do
-        if [ -f "$ibg_path" ] && [ -x "$ibg_path" ]; then
-            IBGATEWAY_EXEC="$ibg_path"
-            echo "✓ IB Gateway found at: $IBGATEWAY_EXEC"
-            break
-        fi
-    done
-    
-    if [ -z "$IBGATEWAY_EXEC" ]; then
-        echo "WARNING: IB Gateway executable not found in expected locations"
-        echo "Installation may have completed but executable location is unknown"
+# Install IB Gateway using CLI tool
+if [ -z "$IBGATEWAY_CLI" ]; then
+    echo "ERROR: ibgateway_manager_cli.py not found in expected locations"
+    echo "Searched: /ibgateway_manager_cli.py /workspace/ibgateway_manager_cli.py ./ibgateway_manager_cli.py"
+    exit 1
+fi
+
+echo "=== Installing IB Gateway ==="
+if ! $PYTHON_BIN "$IBGATEWAY_CLI" install-ibgateway; then
+    echo "ERROR: IB Gateway installation failed"
+    exit 1
+fi
+
+# Verify IB Gateway installation
+# Check common installation locations
+IBGATEWAY_EXEC=""
+for ibg_path in /opt/ibgateway/ibgateway /home/$USER/ibgateway/ibgateway "$HOME/ibgateway/ibgateway"; do
+    if [ -f "$ibg_path" ] && [ -x "$ibg_path" ]; then
+        IBGATEWAY_EXEC="$ibg_path"
+        echo "✓ IB Gateway found at: $IBGATEWAY_EXEC"
+        break
     fi
-else
-    echo "Warning: ibgateway_cli.py not found in expected locations"
-    echo "Searched: /ibgateway_cli.py /workspace/ibgateway_cli.py ./ibgateway_cli.py"
+done
+
+if [ -z "$IBGATEWAY_EXEC" ]; then
+    echo "ERROR: IB Gateway executable not found in expected locations after installation"
+    echo "Expected locations:"
+    echo "  - /opt/ibgateway/ibgateway"
+    echo "  - /home/$USER/ibgateway/ibgateway"
+    echo "  - $HOME/ibgateway/ibgateway"
+    exit 1
 fi
 
 # Create necessary directories

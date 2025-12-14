@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "IB Gateway Docker Image with noVNC and Screenshot Support"
 authors = ["Your Name <you@example.com>"]
 readme = "README.md"
-packages = [{include = "ibgateway"}]
+packages = [{include = "ibgateway_manager"}]
 
 [tool.poetry.dependencies]
 python = "^3.8"
@@ -16,7 +16,7 @@ numpy = {version = ">=1.24.0", optional = true}
 full = ["numpy"]
 
 [tool.poetry.scripts]
-ibgateway-cli = "ibgateway.cli:main"
+ibgateway-cli = "ibgateway_manager.cli:main"
 
 [build-system]
 requires = ["poetry-core"]

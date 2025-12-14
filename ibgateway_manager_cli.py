@@ -4,7 +4,7 @@ IB Gateway CLI Tool Entry Point
 """
 
 import sys
-from ibgateway.cli import IBGatewayCLI
+from ibgateway_manager.cli import IBGatewayCLI
 
 
 def main():
