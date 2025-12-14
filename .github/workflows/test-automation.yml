@@ -29,11 +29,15 @@ jobs:
             trading_mode: PAPER
             screenshot_port: 8080
             screenshot_filename: IB_API_PAPER-screenshot.png
+            initial_screenshot_filename: IB_API_PAPER-initial.png
+            after_close_terminal_screenshot_filename: IB_API_PAPER-after-close-terminal.png
           - name: ibgateway-fix-live
             api_type: FIX
             trading_mode: LIVE
             screenshot_port: 8081
             screenshot_filename: FIX_LIVE-screenshot.png
+            initial_screenshot_filename: FIX_LIVE-initial.png
+            after_close_terminal_screenshot_filename: FIX_LIVE-after-close-terminal.png
 
     steps:
       - name: Checkout repository
@@ -121,12 +125,29 @@ jobs:
           
           echo "✓ Comparison screenshot copied to host: /tmp/screenshots/${{ matrix.config.screenshot_filename }}"
 
+          docker cp ${{ matrix.config.name }}:/tmp/screenshots/initial_state.png /tmp/screenshots/${{ matrix.config.initial_screenshot_filename }}
+          if [ ! -f "/tmp/screenshots/${{ matrix.config.initial_screenshot_filename }}" ]; then
+            echo "ERROR: Failed to copy initial state screenshot to host"
+            exit 1
+          fi
+          echo "✓ Initial state screenshot copied to host: /tmp/screenshots/${{ matrix.config.initial_screenshot_filename }}"
+
+          docker cp ${{ matrix.config.name }}:/tmp/screenshots/after_close_terminal.png /tmp/screenshots/${{ matrix.config.after_close_terminal_screenshot_filename }}
+          if [ ! -f "/tmp/screenshots/${{ matrix.config.after_close_terminal_screenshot_filename }}" ]; then
+            echo "ERROR: Failed to copy after-close-terminal screenshot to host"
+            exit 1
+          fi
+          echo "✓ After-close-terminal screenshot copied to host: /tmp/screenshots/${{ matrix.config.after_close_terminal_screenshot_filename }}"
+
       - name: Upload automation test screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: automation-test-screenshots-${{ matrix.config.name }}
-          path: /tmp/screenshots/${{ matrix.config.screenshot_filename }}
+          path: |
+            /tmp/screenshots/${{ matrix.config.screenshot_filename }}
+            /tmp/screenshots/${{ matrix.config.initial_screenshot_filename }}
+            /tmp/screenshots/${{ matrix.config.after_close_terminal_screenshot_filename }}
           retention-days: 7
           if-no-files-found: ignore
 
