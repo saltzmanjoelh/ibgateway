@@ -91,6 +91,9 @@ The automation will:
 **Trading Mode Configuration**:
 - `IB_TRADING_MODE`: Choose between `LIVE` or `PAPER` (default: `PAPER`)
 
+**Debug Output**:
+- `DEBUG`: Enable verbose bash debug output (`1` or `true` to enable, default: `0`/disabled). When enabled, shows all commands executed during startup.
+
 #### .env File Format
 
 Create a `.env` file in the script directory with the following format:

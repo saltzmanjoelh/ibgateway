@@ -1,5 +1,8 @@
 #!/bin/bash
-set -x  # Enable debug output for bash script
+# Enable debug output only if DEBUG environment variable is set (default: off)
+if [ "${DEBUG:-0}" = "1" ] || [ "${DEBUG:-0}" = "true" ]; then
+    set -x
+fi
 
 # Clean up stale locks
 rm -rf /tmp/.X99-lock /tmp/.X11-unix/X99
@@ -196,6 +199,9 @@ SCREENSHOT_PID=$!
 echo "Screenshot server started (PID: $SCREENSHOT_PID)"
 wait_for_screenshot_service || exit 1
 
+# Wait for automation to complete
+wait_for_automation
+
 # Start socat port forwarding for IB Gateway
 # IB Gateway only accepts connections from 127.0.0.1, so we forward external ports
 echo "=== Starting socat port forwarding ==="
@@ -204,9 +210,6 @@ python3 /ibgateway_cli.py port-forward > /tmp/port-forward.log 2>&1 &
 PORT_FORWARD_PID=$!
 echo "Port forwarding started (PID: $PORT_FORWARD_PID)"
 wait_for_port_forwarding
-
-# Wait for automation to complete
-wait_for_automation
 
 # Verify all services are ready
 echo ""
