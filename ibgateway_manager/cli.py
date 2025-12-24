@@ -69,6 +69,7 @@ class IBGatewayCLI:
         start_parser.add_argument("--password", help="IB Gateway password (overrides env var)")
         start_parser.add_argument("--api-type", choices=["FIX", "IB_API"], help="API type (overrides env var)")
         start_parser.add_argument("--trading-mode", choices=["LIVE", "PAPER"], help="Trading mode (overrides env var)")
+        start_parser.add_argument("--no-automation", action="store_true", help="Skip automation (start services only)")
         
         # install-ibgateway subcommand
         install_parser = subparsers.add_parser("install-ibgateway", help="Install IB Gateway")
@@ -119,8 +120,9 @@ class IBGatewayCLI:
                 self.config.api_type = parsed_args.api_type.upper()
             if hasattr(parsed_args, "trading_mode") and parsed_args.trading_mode:
                 self.config.trading_mode = parsed_args.trading_mode.upper()
+            no_automation = getattr(parsed_args, "no_automation", False)
             orchestrator = ServiceOrchestrator(self.config, verbose)
-            return orchestrator.start()
+            return orchestrator.start(skip_automation=no_automation)
         
         elif parsed_args.command == "automate-ibgateway":
             handler = AutomationHandler(self.config, verbose)

@@ -206,8 +206,17 @@ class ServiceOrchestrator:
         self.debug_log(f"{'✓' if port_forward_ready else '✗'} Port forwarding: {'Ready' if port_forward_ready else 'Not ready'}")
         self.debug_log(f"{'✓' if automation_ready else '✗'} Automation: {'Complete' if automation_ready else 'Not complete'}")
     
-    def start(self) -> int:
-        """Start all services."""
+    def start(self, skip_automation: bool = False) -> int:
+        """Start all services.
+        
+        Args:
+            skip_automation: If True, skip automation and only start services.
+                            Can also be set via SKIP_AUTOMATION environment variable.
+        """
+        # Check environment variable if skip_automation not explicitly set
+        if not skip_automation:
+            skip_automation = os.getenv("SKIP_AUTOMATION", "0") in ("1", "true", "yes")
+        
         self.log("=== IBGateway ===")
         
         # Create log files
@@ -282,11 +291,7 @@ class ServiceOrchestrator:
             self.log(f"ERROR: Failed to start IB Gateway: {e}")
             return 1
         
-        # Wait for IB Gateway window to appear, then automate configuration
-        self.log("=== Waiting for IB Gateway to start, then automating configuration ===")
-        time.sleep(5)
-        
-        # Determine CLI script path
+        # Determine CLI script path (needed for both automation and screenshot server)
         # Try /ibgateway_manager_cli.py first (Docker container path), then fallback to script location
         cli_script = "/ibgateway_manager_cli.py"
         if not Path(cli_script).exists():
@@ -296,18 +301,25 @@ class ServiceOrchestrator:
             if potential_path.exists():
                 cli_script = str(potential_path)
         
-        # Start automation in background
-        try:
-            with open("/tmp/automate-ibgateway.log", "w") as log_f:
-                self.automation_process = subprocess.Popen(
-                    [sys.executable, "-u", cli_script, "automate-ibgateway"],
-                    stdout=log_f,
-                    stderr=subprocess.STDOUT
-                )
-            self.log(f"Automation script started (PID: {self.automation_process.pid})")
-        except Exception as e:
-            self.log(f"ERROR: Failed to start automation: {e}")
-            return 1
+        if skip_automation:
+            self.log("=== Skipping automation (--no-automation flag set) ===")
+        else:
+            # Wait for IB Gateway window to appear, then automate configuration
+            self.log("=== Waiting for IB Gateway to start, then automating configuration ===")
+            time.sleep(5)
+            
+            # Start automation in background
+            try:
+                with open("/tmp/automate-ibgateway.log", "w") as log_f:
+                    self.automation_process = subprocess.Popen(
+                        [sys.executable, "-u", cli_script, "automate-ibgateway"],
+                        stdout=log_f,
+                        stderr=subprocess.STDOUT
+                    )
+                self.log(f"Automation script started (PID: {self.automation_process.pid})")
+            except Exception as e:
+                self.log(f"ERROR: Failed to start automation: {e}")
+                return 1
         
         # Start screenshot HTTP server in background
         self.log(f"=== Starting screenshot HTTP server on port {self.config.screenshot_port} ===")
@@ -326,8 +338,9 @@ class ServiceOrchestrator:
         if not self._wait_for_screenshot_service():
             return 1
         
-        # Wait for automation to complete
-        self._wait_for_automation()
+        # Wait for automation to complete (only if automation was started)
+        if not skip_automation:
+            self._wait_for_automation()
         
         # Start port forwarding in background
         self.log("=== Starting socat port forwarding ===")
