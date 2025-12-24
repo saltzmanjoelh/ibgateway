@@ -262,7 +262,7 @@ class AutomationHandler:
                 continue
             
             try:
-                result = compare_images_pil(str(reference_path), current, threshold=0.01, max_diff_percentage=5.0)
+                result = compare_images_pil(str(reference_path), current, threshold=0.01, max_diff_percentage=10.0)
                 
                 if result["is_match"]:
                     self.log(
@@ -285,7 +285,65 @@ class AutomationHandler:
         
         self.log(f"WARNING: Pre-credentials state not reached after {timeout}s, continuing anyway...")
         return False  # Don't fail, but log warning
-    
+
+    def wait_for_i_understand_button(self, timeout: int = 30) -> bool:
+        """Wait until screenshot matches i_understand.png reference image."""
+        project_root = Path(__file__).resolve().parent.parent
+        reference_path = project_root / "test-screenshots" / "i_understand.png"
+        
+        if not reference_path.exists():
+            self.log(
+                f"WARNING: Reference screenshot not found: {reference_path}. "
+                "Skipping I understand button check."
+            )
+            return True  # Don't fail if reference doesn't exist
+        
+        self.log("Waiting for I understand button to appear...")
+        screenshotter = ScreenshotHandler(self.config, verbose=self.verbose)
+        
+        elapsed = 0
+        while elapsed < timeout:
+            current_path = os.path.join(self.config.screenshot_dir, "i_understand_button_check.png")
+            current = screenshotter.take_screenshot(current_path)
+            if not current:
+                self.log("ERROR: Failed to capture screenshot for I understand button check")
+                time.sleep(1)
+                elapsed += 1
+                continue
+            
+            try:
+                result = compare_images_pil(str(reference_path), current, threshold=0.01, max_diff_percentage=10.0)
+                
+                if result["is_match"]:
+                    self.log(
+                        f"✓ I understand button appeared "
+                        f"(mean_diff={result['mean_diff']:.2f}, diff_percentage={result['diff_percentage']:.2f}%)"
+                    )
+                    return True
+                
+                # Log progress every 5 seconds
+                if elapsed % 5 == 0:
+                    self.log(
+                        f"Waiting... (mean_diff={result['mean_diff']:.2f}, "
+                        f"diff_percentage={result['diff_percentage']:.2f}%)"
+                    )
+            except Exception as e:
+                self.log(f"WARNING: Failed to compare screenshots: {e}")
+            
+            time.sleep(1)
+            elapsed += 1
+        
+        self.log(f"WARNING: I understand button not found after {timeout}s, continuing anyway...")
+        return False  # Don't fail, but log warning
+
+    def click_i_understand_button(self, window_id: str):
+        """Click the I understand button."""
+        self.log("Clicking I understand button...")
+        # Press enter
+        self.run_xdotool("key", "Return")
+        self.click_at_coordinates(window_id, 354, 391, "I understand")
+        self.log("✓ I understand button clicked")
+
     def automate(self) -> int:
         """Main automation function."""
         self.config.print_config()
@@ -319,6 +377,10 @@ class AutomationHandler:
         # Type username/password if provided
         self.type_username(window_id)
         self.type_password(window_id)
+
+        # Wait for the I understand button to appear
+        self.wait_for_i_understand_button()
+        self.click_i_understand_button(window_id)
         
         self.log("")
         self.log("--- Configuration Complete ---")
