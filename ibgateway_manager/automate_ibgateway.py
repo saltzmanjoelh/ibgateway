@@ -272,11 +272,10 @@ class AutomationHandler:
                     return True
                 
                 # Log progress every 5 seconds
-                if elapsed % 5 == 0:
-                    self.log(
-                        f"Waiting... (mean_diff={result['mean_diff']:.2f}, "
-                        f"diff_percentage={result['diff_percentage']:.2f}%)"
-                    )
+                self.log(
+                    f"Waiting... (mean_diff={result['mean_diff']:.2f}, "
+                    f"diff_percentage={result['diff_percentage']:.2f}%)"
+                )
             except Exception as e:
                 self.log(f"WARNING: Failed to compare screenshots: {e}")
             
@@ -322,11 +321,10 @@ class AutomationHandler:
                     return True
                 
                 # Log progress every 5 seconds
-                if elapsed % 5 == 0:
-                    self.log(
-                        f"Waiting... (mean_diff={result['mean_diff']:.2f}, "
-                        f"diff_percentage={result['diff_percentage']:.2f}%)"
-                    )
+                self.log(
+                    f"Waiting... (mean_diff={result['mean_diff']:.2f}, "
+                    f"diff_percentage={result['diff_percentage']:.2f}%)"
+                )
             except Exception as e:
                 self.log(f"WARNING: Failed to compare screenshots: {e}")
             
