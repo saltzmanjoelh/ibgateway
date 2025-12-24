@@ -57,21 +57,16 @@ class ServiceOrchestrator:
         else:
             print(message, flush=True)
     
-    def debug_log(self, message: str):
-        """Print debug log message."""
-        if self.debug_mode:
-            print(f"[DEBUG] {message}", flush=True)
-    
     def _create_log_files(self):
         """Create log files."""
-        self.debug_log("=== Create and stream logs ===")
+        self.log("=== Create and stream logs ===")
         for log_file in self.log_files:
             Path(log_file).touch()
     
     def _start_log_tailing(self):
         """Start tailing log files."""
-        if self.debug_mode:
-            # Tail all logs in debug mode
+        if self.verbose:
+            # Tail all logs in verbose mode
             self.tail_process = subprocess.Popen(
                 ["tail", "-f"] + self.log_files,
                 stdout=sys.stdout,
@@ -87,7 +82,7 @@ class ServiceOrchestrator:
     
     def _wait_for_screenshot_service(self, timeout: int = 60) -> bool:
         """Wait for screenshot service to be ready."""
-        self.debug_log("Waiting for screenshot service to be ready...")
+        self.log("Waiting for screenshot service to be ready...")
         
         for i in range(timeout):
             try:
@@ -95,7 +90,7 @@ class ServiceOrchestrator:
                 response = urllib.request.urlopen(f"http://localhost:{self.config.screenshot_port}/", timeout=1)
                 if response.getcode() == 200:
                     # If port is accessible, consider it ready
-                    self.debug_log("✓ Screenshot service is ready")
+                    self.log("✓ Screenshot service is ready")
                     return True
             except Exception:
                 pass
@@ -104,7 +99,7 @@ class ServiceOrchestrator:
             if Path("/tmp/screenshot-server.log").exists():
                 log_content = Path("/tmp/screenshot-server.log").read_text()
                 if "Screenshot service ready" in log_content:
-                    self.debug_log("✓ Screenshot service is ready")
+                    self.log("✓ Screenshot service is ready")
                     return True
             
             time.sleep(1)
@@ -150,7 +145,7 @@ class ServiceOrchestrator:
     
     def _wait_for_port_forwarding(self, timeout: int = 30) -> bool:
         """Wait for port forwarding to be ready."""
-        self.debug_log("Waiting for port forwarding to be ready...")
+        self.log("Waiting for port forwarding to be ready...")
         
         for i in range(timeout):
             try:
@@ -171,19 +166,19 @@ class ServiceOrchestrator:
                     output = result.stdout if result.returncode == 0 else ""
                 
                 if ":4003 " in output and ":4004 " in output:
-                    self.debug_log("✓ Port forwarding is ready")
+                    self.log("✓ Port forwarding is ready")
                     return True
             except Exception:
                 pass
             
             time.sleep(1)
         
-        self.debug_log("WARNING: Port forwarding may not be ready")
+        self.log("WARNING: Port forwarding may not be ready")
         return True  # Don't fail on this, as IB Gateway ports may not be available yet
     
     def _verify_all_services(self):
         """Verify all services are ready."""
-        self.debug_log("")
+        self.log("")
         self.log("=== Verifying all services ===")
         
         xvfb_ready = self.xvfb.process and self.xvfb.process.poll() is None
@@ -199,12 +194,12 @@ class ServiceOrchestrator:
                 self.automation_process and self.automation_process.poll() is not None
             )
         
-        self.debug_log(f"{'✓' if xvfb_ready else '✗'} Xvfb: {'Ready' if xvfb_ready else 'Not ready'}")
-        self.debug_log(f"{'✓' if vnc_ready else '✗'} VNC: {'Ready' if vnc_ready else 'Not ready'}")
-        self.debug_log(f"{'✓' if novnc_ready else '✗'} noVNC: {'Ready' if novnc_ready else 'Not ready'}")
-        self.debug_log(f"{'✓' if screenshot_ready else '✗'} Screenshot service: {'Ready' if screenshot_ready else 'Not ready'}")
-        self.debug_log(f"{'✓' if port_forward_ready else '✗'} Port forwarding: {'Ready' if port_forward_ready else 'Not ready'}")
-        self.debug_log(f"{'✓' if automation_ready else '✗'} Automation: {'Complete' if automation_ready else 'Not complete'}")
+        self.log(f"{'✓' if xvfb_ready else '✗'} Xvfb: {'Ready' if xvfb_ready else 'Not ready'}")
+        self.log(f"{'✓' if vnc_ready else '✗'} VNC: {'Ready' if vnc_ready else 'Not ready'}")
+        self.log(f"{'✓' if novnc_ready else '✗'} noVNC: {'Ready' if novnc_ready else 'Not ready'}")
+        self.log(f"{'✓' if screenshot_ready else '✗'} Screenshot service: {'Ready' if screenshot_ready else 'Not ready'}")
+        self.log(f"{'✓' if port_forward_ready else '✗'} Port forwarding: {'Ready' if port_forward_ready else 'Not ready'}")
+        self.log(f"{'✓' if automation_ready else '✗'} Automation: {'Complete' if automation_ready else 'Not complete'}")
     
     def start(self, skip_automation: bool = False) -> int:
         """Start all services.
@@ -272,10 +267,10 @@ class ServiceOrchestrator:
             return 1
         
         # Debug: Show environment
-        self.debug_log("=== Environment ===")
-        self.debug_log(f"RESOLUTION={self.config.resolution}")
-        self.debug_log(f"USER={os.getenv('USER', 'root')}")
-        self.debug_log(f"DISPLAY={self.config.display}")
+        self.log("=== Environment ===")
+        self.log(f"RESOLUTION={self.config.resolution}")
+        self.log(f"USER={os.getenv('USER', 'root')}")
+        self.log(f"DISPLAY={self.config.display}")
         
         # Start IB Gateway
         self.log("=== Starting IB Gateway ===")
@@ -330,7 +325,7 @@ class ServiceOrchestrator:
                     stdout=log_f,
                     stderr=subprocess.STDOUT
                 )
-            self.debug_log(f"Screenshot server started (PID: {self.screenshot_process.pid})")
+            self.log(f"Screenshot server started (PID: {self.screenshot_process.pid})")
         except Exception as e:
             self.log(f"ERROR: Failed to start screenshot server: {e}")
             return 1
@@ -348,14 +343,14 @@ class ServiceOrchestrator:
         if not self.port_forwarder.start_background():
             self.log("WARNING: Port forwarding failed to start")
         else:
-            self.debug_log(f"Port forwarding started")
+            self.log(f"Port forwarding started")
         
         self._wait_for_port_forwarding()
         
         # Verify all services
         self._verify_all_services()
         
-        self.debug_log("")
+        self.log("")
         self.log("=== All services ready ===")
         
         # Keep running - wait for tail process or processes
