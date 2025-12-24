@@ -172,6 +172,7 @@ class VNCManager:
                         "-forever",
                         "-shared",
                         "-rfbport", str(self.port),
+                        "-nopw",  # Explicitly disable password (suppresses warning)
                         "-bg",
                         "-o", self.log_file
                     ],

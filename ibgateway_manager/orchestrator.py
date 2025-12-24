@@ -52,7 +52,7 @@ class ServiceOrchestrator:
     
     def log(self, message: str):
         """Print log message."""
-        if self.verbose or self.debug_mode:
+        if self.verbose:
             print(f"[ORCHESTRATOR] {message}", flush=True)
         else:
             print(message, flush=True)
