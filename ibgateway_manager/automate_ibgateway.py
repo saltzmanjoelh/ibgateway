@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from .config import Config
-from .screenshot import ScreenshotHandler, compare_images_pil
+from .screenshot import ScreenshotHandler
 
 
 class AutomationHandler:
@@ -204,24 +204,19 @@ class AutomationHandler:
             return False
 
         screenshotter = ScreenshotHandler(self.config, verbose=self.verbose)
-        current_path = os.path.join(self.config.screenshot_dir, "pre_credentials_state.png")
-        current = screenshotter.take_screenshot(current_path)
-        if not current:
-            self.log("ERROR: Failed to capture screenshot for state verification")
-            return False
+        is_match, result, current_path = screenshotter.compare_with_reference(
+            str(expected_path),
+            "pre_credentials_state.png",
+            threshold=0.01,
+            max_diff_percentage=1.0
+        )
 
-        try:
-            result = compare_images_pil(str(expected_path), current, threshold=0.01, max_diff_percentage=1.0)
-        except Exception as e:
-            self.log(f"ERROR: Failed to compare screenshots: {e}")
-            self.log(f"Reference: {expected_path}")
-            self.log(f"Current:   {current}")
-            return False
-
-        if not result["is_match"]:
+        if not is_match or result is None:
+            if result is None:
+                return False
             self.log("ERROR: GUI state does not match expected target state after button clicks.")
             self.log(f"Reference: {expected_path}")
-            self.log(f"Current:   {current}")
+            self.log(f"Current:   {current_path}")
             self.log(
                 "Comparison metrics: "
                 f"mean_diff={result['mean_diff']:.2f}, "
@@ -241,98 +236,43 @@ class AutomationHandler:
         project_root = Path(__file__).resolve().parent.parent
         reference_path = project_root / "test-screenshots" / "pre_credentials_state.png"
         
-        if not reference_path.exists():
-            self.log(
-                f"WARNING: Reference screenshot not found: {reference_path}. "
-                "Skipping pre-credentials state check."
-            )
-            return True  # Don't fail if reference doesn't exist
-        
         self.log("Waiting for window to reach pre-credentials state...")
         screenshotter = ScreenshotHandler(self.config, verbose=self.verbose)
         
-        elapsed = 0
-        while elapsed < timeout:
-            current_path = os.path.join(self.config.screenshot_dir, "pre_credentials_state_check.png")
-            current = screenshotter.take_screenshot(current_path)
-            if not current:
-                self.log("ERROR: Failed to capture screenshot for state check")
-                time.sleep(1)
-                elapsed += 1
-                continue
-            
-            try:
-                result = compare_images_pil(str(reference_path), current, threshold=0.01, max_diff_percentage=10.0)
-                
-                if result["is_match"]:
-                    self.log(
-                        f"✓ Pre-credentials state reached "
-                        f"(mean_diff={result['mean_diff']:.2f}, diff_percentage={result['diff_percentage']:.2f}%)"
-                    )
-                    return True
-                
-                # Log progress every 5 seconds
-                self.log(
-                    f"Waiting... (mean_diff={result['mean_diff']:.2f}, "
-                    f"diff_percentage={result['diff_percentage']:.2f}%)"
-                )
-            except Exception as e:
-                self.log(f"WARNING: Failed to compare screenshots: {e}")
-            
-            time.sleep(1)
-            elapsed += 1
+        success, _ = screenshotter.wait_for_state_match(
+            str(reference_path),
+            "pre_credentials_state_check.png",
+            timeout=timeout,
+            threshold=0.01,
+            max_diff_percentage=10.0,
+            success_message=None,  # Use default message
+            waiting_message=None   # Use default message
+        )
         
-        self.log(f"WARNING: Pre-credentials state not reached after {timeout}s, continuing anyway...")
-        return False  # Don't fail, but log warning
+        return success
 
     def wait_for_i_understand_button(self, timeout: int = 30) -> bool:
         """Wait until screenshot matches i_understand.png reference image."""
         project_root = Path(__file__).resolve().parent.parent
         reference_path = project_root / "test-screenshots" / "i_understand.png"
         
-        if not reference_path.exists():
-            self.log(
-                f"WARNING: Reference screenshot not found: {reference_path}. "
-                "Skipping I understand button check."
-            )
-            return True  # Don't fail if reference doesn't exist
-        
         self.log("Waiting for I understand button to appear...")
         screenshotter = ScreenshotHandler(self.config, verbose=self.verbose)
         
-        elapsed = 0
-        while elapsed < timeout:
-            current_path = os.path.join(self.config.screenshot_dir, "i_understand_button_check.png")
-            current = screenshotter.take_screenshot(current_path)
-            if not current:
-                self.log("ERROR: Failed to capture screenshot for I understand button check")
-                time.sleep(1)
-                elapsed += 1
-                continue
-            
-            try:
-                result = compare_images_pil(str(reference_path), current, threshold=0.01, max_diff_percentage=10.0)
-                
-                if result["is_match"]:
-                    self.log(
-                        f"✓ I understand button appeared "
-                        f"(mean_diff={result['mean_diff']:.2f}, diff_percentage={result['diff_percentage']:.2f}%)"
-                    )
-                    return True
-                
-                # Log progress every 5 seconds
-                self.log(
-                    f"Waiting... (mean_diff={result['mean_diff']:.2f}, "
-                    f"diff_percentage={result['diff_percentage']:.2f}%)"
-                )
-            except Exception as e:
-                self.log(f"WARNING: Failed to compare screenshots: {e}")
-            
-            time.sleep(1)
-            elapsed += 1
+        # Correct state shows: mean_diff=5.42, diff_percentage=6.06%
+        # threshold=0.03 allows mean_diff up to ~7.65 (5.42/255 ≈ 0.021, using 0.03 for margin)
+        # max_diff_percentage=8.0 allows up to 8% different pixels (6.06% < 8.0%)
+        success, _ = screenshotter.wait_for_state_match(
+            str(reference_path),
+            "i_understand_button_check.png",
+            timeout=timeout,
+            threshold=0.03,
+            max_diff_percentage=8.0,
+            success_message=None,  # Use default message
+            waiting_message=None   # Use default message
+        )
         
-        self.log(f"WARNING: I understand button not found after {timeout}s, continuing anyway...")
-        return False  # Don't fail, but log warning
+        return success
 
     def click_i_understand_button(self, window_id: str):
         """Click the I understand button."""

@@ -5,7 +5,8 @@ Screenshot handling functionality.
 import os
 import subprocess
 import time
-from typing import Optional, Dict, Any
+import glob
+from typing import Optional, Dict, Any, Tuple
 
 try:
     from PIL import Image, ImageChops, ImageStat
@@ -85,9 +86,28 @@ class ScreenshotHandler:
                 timeout=10
             )
             
-            if result.returncode == 0 and os.path.exists(output_path):
-                self.log(f"Screenshot saved to: {output_path}")
-                return output_path
+            if result.returncode == 0:
+                # Small delay to ensure file system sync (especially for numbered versions)
+                time.sleep(0.1)
+                
+                # When using scrot with -z flag, if file exists it creates numbered versions
+                # Numbered versions are always newer, so check for them first
+                if self._command_exists("scrot"):
+                    numbered_path = self._find_numbered_screenshot(output_path)
+                    if numbered_path and os.path.exists(numbered_path):
+                        self.log(f"Screenshot saved to: {numbered_path} (numbered version)")
+                        return numbered_path
+                    elif self.verbose:
+                        self.log(f"No numbered screenshot found, checking exact path: {output_path}")
+                
+                # Fall back to exact path (first time screenshot or imagemagick)
+                if os.path.exists(output_path):
+                    self.log(f"Screenshot saved to: {output_path} (exact path)")
+                    return output_path
+                
+                # If we get here, screenshot command succeeded but file not found
+                self.log(f"ERROR: Screenshot command succeeded but file not found at: {output_path}")
+                return None
             else:
                 self.log(f"ERROR: Screenshot failed: {result.stderr}")
                 return None
@@ -101,6 +121,54 @@ class ScreenshotHandler:
             ["which", command],
             capture_output=True
         ).returncode == 0
+    
+    def _find_numbered_screenshot(self, output_path: str) -> Optional[str]:
+        """Find numbered screenshot files created by scrot when file already exists.
+        
+        When scrot -z is called with a filename that already exists, it creates
+        numbered versions like filename_000.png, filename_001.png, etc.
+        
+        Args:
+            output_path: The original requested output path
+            
+        Returns:
+            Path to the most recently created numbered screenshot, or None if not found
+        """
+        directory = os.path.dirname(output_path)
+        base_name = os.path.basename(output_path)
+        
+        # Ensure directory is absolute
+        directory = os.path.abspath(directory)
+        
+        # Extract base name without extension (e.g., "pre_credentials_state_check" from "pre_credentials_state_check.png")
+        base_name_no_ext = os.path.splitext(base_name)[0]
+        extension = os.path.splitext(base_name)[1]
+        
+        # Pattern to match numbered versions: base_name_*.png
+        pattern = os.path.join(directory, f"{base_name_no_ext}_*{extension}")
+        
+        if self.verbose:
+            self.log(f"Searching for numbered screenshots with pattern: {pattern}")
+        
+        matching_files = glob.glob(pattern)
+        
+        if not matching_files:
+            if self.verbose:
+                # List all files in directory for debugging
+                try:
+                    all_files = os.listdir(directory)
+                    self.log(f"Directory contents: {all_files}")
+                except Exception as e:
+                    self.log(f"Could not list directory: {e}")
+                self.log(f"No numbered screenshots found matching pattern: {pattern}")
+            return None
+        
+        # Return the most recently modified file
+        latest = max(matching_files, key=os.path.getmtime)
+        if self.verbose:
+            self.log(f"Found {len(matching_files)} numbered screenshot(s): {matching_files}")
+            self.log(f"Using latest: {latest} (mtime: {os.path.getmtime(latest)})")
+        return latest
     
     def compare_screenshots(self, img1_path: str, img2_path: str, threshold: float = 0.01) -> int:
         """Compare two screenshots and return exit code.
@@ -197,6 +265,121 @@ class ScreenshotHandler:
         
         self.log("--- Step 2: Comparing screenshots ---")
         return self.compare_screenshots(test_image_path, current_screenshot_path, threshold)
+    
+    def compare_with_reference(
+        self,
+        reference_path: str,
+        screenshot_filename: str,
+        threshold: float = 0.01,
+        max_diff_percentage: float = 1.0
+    ) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
+        """Take a screenshot and compare it with a reference image.
+        
+        Args:
+            reference_path: Path to reference screenshot
+            screenshot_filename: Filename for the current screenshot (will be saved in screenshot_dir)
+            threshold: Mean pixel diff threshold as a fraction of 255
+            max_diff_percentage: Max percentage of pixels that may differ
+            
+        Returns:
+            Tuple of (is_match: bool, result: dict or None, current_path: str or None)
+            is_match is True if images match, False otherwise
+            result contains comparison metrics if comparison succeeded
+            current_path is the path to the screenshot that was taken
+        """
+        if not os.path.exists(reference_path):
+            self.log(f"ERROR: Reference image not found: {reference_path}")
+            return False, None, None
+        
+        current_path = os.path.join(self.config.screenshot_dir, screenshot_filename)
+        current = self.take_screenshot(current_path)
+        if not current:
+            self.log("ERROR: Failed to capture screenshot for comparison")
+            return False, None, None
+        
+        try:
+            result = compare_images_pil(reference_path, current, threshold=threshold, max_diff_percentage=max_diff_percentage)
+            return result["is_match"], result, current
+        except Exception as e:
+            self.log(f"ERROR: Failed to compare screenshots: {e}")
+            self.log(f"Reference: {reference_path}")
+            self.log(f"Current:   {current}")
+            return False, None, current
+    
+    def wait_for_state_match(
+        self,
+        reference_path: str,
+        screenshot_filename: str,
+        timeout: int = 30,
+        threshold: float = 0.01,
+        max_diff_percentage: float = 10.0,
+        success_message: Optional[str] = None,
+        waiting_message: Optional[str] = None
+    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        """Wait until screenshot matches reference image or timeout.
+        
+        Args:
+            reference_path: Path to reference screenshot
+            screenshot_filename: Filename for screenshots (will be saved in screenshot_dir)
+            timeout: Maximum time to wait in seconds
+            threshold: Mean pixel diff threshold as a fraction of 255
+            max_diff_percentage: Max percentage of pixels that may differ
+            success_message: Custom success message (default includes metrics)
+            waiting_message: Custom waiting message (default includes metrics)
+            
+        Returns:
+            Tuple of (success: bool, result: dict or None)
+            success is True if match found, False if timeout
+            result contains comparison metrics from the last comparison
+        """
+        if not os.path.exists(reference_path):
+            self.log(
+                f"WARNING: Reference screenshot not found: {reference_path}. "
+                "Skipping state check."
+            )
+            return True, None  # Don't fail if reference doesn't exist
+        
+        elapsed = 0
+        while elapsed < timeout:
+            current_path = os.path.join(self.config.screenshot_dir, screenshot_filename)
+            current = self.take_screenshot(current_path)
+            if not current:
+                self.log("ERROR: Failed to capture screenshot for state check")
+                time.sleep(1)
+                elapsed += 1
+                continue
+            
+            try:
+                self.log(f"Current: {current}")
+                self.log(f"Reference: {reference_path}")
+                result = compare_images_pil(reference_path, current, threshold=threshold, max_diff_percentage=max_diff_percentage)
+                
+                if result["is_match"]:
+                    if success_message:
+                        self.log(success_message)
+                    else:
+                        self.log(
+                            f"✓ State match reached "
+                            f"(mean_diff={result['mean_diff']:.2f}, diff_percentage={result['diff_percentage']:.2f}%)"
+                        )
+                    return True, result
+                
+                # Log progress
+                if waiting_message:
+                    self.log(waiting_message)
+                else:
+                    self.log(
+                        f"Waiting... (mean_diff={result['mean_diff']:.2f}, "
+                        f"diff_percentage={result['diff_percentage']:.2f}%)"
+                    )
+            except Exception as e:
+                self.log(f"WARNING: Failed to compare screenshots: {e}")
+            
+            time.sleep(1)
+            elapsed += 1
+        
+        self.log(f"WARNING: State match not reached after {timeout}s, continuing anyway...")
+        return False, None
 
 
 def compare_images_pil(
