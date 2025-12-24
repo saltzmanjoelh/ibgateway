@@ -30,7 +30,7 @@ RUN ./scripts/setup.sh && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 5900 8080 4003 4004
+EXPOSE 5900 8080 4003 4004 5678
 
 CMD ["/entrypoint.sh"]
 
