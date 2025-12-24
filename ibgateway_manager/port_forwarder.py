@@ -73,7 +73,7 @@ class PortForwarder:
         self.log(f"Forwarding {self.forward_paper_port} -> 127.0.0.1:{self.paper_port} (Paper Trading)")
         
         # Wait for ports (non-blocking, will start anyway)
-        self.wait_for_ports()
+        # self.wait_for_ports()
         
         # Start Live Trading forwarding
         self.log(f"Starting socat forwarding for Live Trading ({self.forward_live_port} -> 127.0.0.1:{self.live_port})...")
