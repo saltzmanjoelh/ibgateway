@@ -10,5 +10,7 @@ if [ "${DEBUG}" = "1" ] || [ "${DEBUG}" = "true" ]; then
     exec python3 -m debugpy --listen 0.0.0.0:5678 --wait-for-client /ibgateway_manager_cli.py start-services
 else
     # Run normally
-    exec python3 -u /ibgateway_manager_cli.py start-services
+    exec python3 -u /ibgateway_manager_cli.py 
+    echo "ERROR: IB Gateway CLI exited with code $?"
+    exit 1
 fi
