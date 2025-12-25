@@ -108,6 +108,28 @@ class ServiceOrchestrator:
         self.log("Waiting for automation to complete...")
         
         for i in range(timeout):
+            # Check if process crashed
+            if self.automation_process and self.automation_process.poll() is not None:
+                exit_code = self.automation_process.returncode
+                # Process finished, check log for completion
+                if Path("/tmp/automate-ibgateway.log").exists():
+                    log_content = Path("/tmp/automate-ibgateway.log").read_text()
+                    if "Configuration Complete" in log_content:
+                        self.log("✓ Automation completed")
+                        return True
+                    else:
+                        # Process exited but didn't complete - check exit code
+                        if exit_code != 0:
+                            self.log(f"ERROR: Automation process exited with code {exit_code}")
+                            # Show last part of log for debugging
+                            if log_content:
+                                self.log(f"Last log entries: {log_content[-1000:]}")
+                            return False
+                        else:
+                            # Exit code 0 but no completion message - might be OK, but log warning
+                            self.log("WARNING: Automation process finished but completion message not found")
+                            return False
+            
             # Check log file for completion message
             if Path("/tmp/automate-ibgateway.log").exists():
                 log_content = Path("/tmp/automate-ibgateway.log").read_text()
@@ -115,20 +137,9 @@ class ServiceOrchestrator:
                     self.log("✓ Automation completed")
                     return True
             
-            # Also check if process is still running
-            if self.automation_process and self.automation_process.poll() is not None:
-                # Process finished, check log one more time
-                if Path("/tmp/automate-ibgateway.log").exists():
-                    log_content = Path("/tmp/automate-ibgateway.log").read_text()
-                    if "Configuration Complete" in log_content:
-                        self.log("✓ Automation completed")
-                        return True
-                    else:
-                        self.log("WARNING: Automation process finished but completion message not found")
-                        return True  # Don't fail, automation may have completed
-            
             time.sleep(1)
         
+        # Timeout reached
         # Final check
         if Path("/tmp/automate-ibgateway.log").exists():
             log_content = Path("/tmp/automate-ibgateway.log").read_text()
@@ -136,8 +147,12 @@ class ServiceOrchestrator:
                 self.log("✓ Automation completed")
                 return True
         
-        self.log("WARNING: Automation timeout, but continuing...")
-        return True  # Don't fail, allow container to continue
+        self.log(f"ERROR: Automation did not complete within {timeout}s timeout")
+        if Path("/tmp/automate-ibgateway.log").exists():
+            log_content = Path("/tmp/automate-ibgateway.log").read_text()
+            if log_content:
+                self.log(f"Last log entries: {log_content[-1000:]}")
+        return False
     
     def _wait_for_port_forwarding(self, timeout: int = 30) -> bool:
         """Wait for port forwarding to be ready."""
@@ -169,8 +184,8 @@ class ServiceOrchestrator:
             
             time.sleep(1)
         
-        self.log("WARNING: Port forwarding may not be ready")
-        return True  # Don't fail on this, as IB Gateway ports may not be available yet
+        self.log("ERROR: Port forwarding failed to start within timeout")
+        return False
     
     def _verify_all_services(self):
         """Verify all services are ready."""
@@ -278,6 +293,13 @@ class ServiceOrchestrator:
                 env=env
             )
             self.log(f"IB Gateway started (PID: {self.ibgateway_process.pid})")
+            
+            # Check if process crashed immediately
+            time.sleep(2)  # Give it a moment to start
+            if self.ibgateway_process.poll() is not None:
+                exit_code = self.ibgateway_process.returncode
+                self.log(f"ERROR: IB Gateway process exited immediately with code {exit_code}")
+                return 1
         except Exception as e:
             self.log(f"ERROR: Failed to start IB Gateway: {e}")
             return 1
@@ -326,19 +348,33 @@ class ServiceOrchestrator:
         if not self._wait_for_screenshot_service():
             return 1
         
+        # Check if screenshot process crashed
+        if self.screenshot_process and self.screenshot_process.poll() is not None:
+            exit_code = self.screenshot_process.returncode
+            self.log(f"ERROR: Screenshot server process exited with code {exit_code}")
+            if Path("/tmp/screenshot-server.log").exists():
+                log_content = Path("/tmp/screenshot-server.log").read_text()
+                if log_content:
+                    self.log(f"Screenshot server log: {log_content[-1000:]}")
+            return 1
+        
         # Wait for automation to complete (only if automation was started)
         if not skip_automation:
-            self._wait_for_automation()
+            if not self._wait_for_automation():
+                self.log("ERROR: Automation failed to complete")
+                return 1
         
         # Start port forwarding in background
         self.log("=== Starting socat port forwarding ===")
         self.port_forwarder = PortForwarder(self.config, self.verbose)
         if not self.port_forwarder.start_background():
-            self.log("WARNING: Port forwarding failed to start")
-        else:
-            self.log(f"Port forwarding started")
+            self.log("ERROR: Port forwarding failed to start")
+            return 1
+        self.log(f"Port forwarding started")
         
-        self._wait_for_port_forwarding()
+        if not self._wait_for_port_forwarding():
+            self.log("ERROR: Port forwarding did not become ready")
+            return 1
         
         # Verify all services
         self._verify_all_services()
