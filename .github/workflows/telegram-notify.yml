@@ -1,0 +1,58 @@
+name: Telegram Notification
+
+on:
+  workflow_call:
+    inputs:
+      workflow_name:
+        required: true
+        type: string
+      status:
+        required: true
+        type: string
+        description: 'success, failure, or cancelled'
+      workflow_url:
+        required: true
+        type: string
+      commit_message:
+        required: false
+        type: string
+        default: ''
+      commit_author:
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Telegram notification
+        if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != '' }}
+        run: |
+          STATUS_EMOJI=""
+          if [ "${{ inputs.status }}" == "success" ]; then
+            STATUS_EMOJI="✅"
+          elif [ "${{ inputs.status }}" == "failure" ]; then
+            STATUS_EMOJI="❌"
+          else
+            STATUS_EMOJI="⚠️"
+          fi
+          
+          COMMIT_INFO=""
+          if [ -n "${{ inputs.commit_message }}" ]; then
+            COMMIT_INFO="\n📝 Commit: ${{ inputs.commit_message }}"
+            if [ -n "${{ inputs.commit_author }}" ]; then
+              COMMIT_INFO="$COMMIT_INFO\n👤 Author: ${{ inputs.commit_author }}"
+            fi
+          fi
+          
+          MESSAGE="${STATUS_EMOJI} *${{ inputs.workflow_name }}* - ${{ inputs.status }}$COMMIT_INFO
+          
+          🔗 [View Workflow](${{ inputs.workflow_url }})"
+          
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="$MESSAGE" \
+            -d parse_mode="Markdown" \
+            -d disable_web_page_preview=false
+

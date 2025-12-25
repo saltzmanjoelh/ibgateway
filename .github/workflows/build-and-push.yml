@@ -56,3 +56,15 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=min
+
+  notify:
+    needs: build-and-push
+    if: always()
+    uses: ./.github/workflows/telegram-notify.yml
+    with:
+      workflow_name: Build and Push Docker Image
+      status: ${{ needs.build-and-push.result == 'success' && 'success' || needs.build-and-push.result == 'failure' && 'failure' || 'cancelled' }}
+      workflow_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      commit_message: ${{ github.event.head_commit.message || github.event.pull_request.title || '' }}
+      commit_author: ${{ github.event.head_commit.author.name || github.event.pull_request.user.login || github.actor || '' }}
+    secrets: inherit

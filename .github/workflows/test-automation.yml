@@ -162,3 +162,15 @@ jobs:
         run: |
           docker stop ${{ matrix.config.name }} 2>/dev/null || true
           docker rm ${{ matrix.config.name }} 2>/dev/null || true
+
+  notify:
+    needs: [test-automation]
+    if: always()
+    uses: ./.github/workflows/telegram-notify.yml
+    with:
+      workflow_name: Test Automation
+      status: ${{ needs.test-automation.result == 'success' && 'success' || needs.test-automation.result == 'failure' && 'failure' || 'cancelled' }}
+      workflow_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      commit_message: ${{ github.event.head_commit.message || github.event.pull_request.title || '' }}
+      commit_author: ${{ github.event.head_commit.author.name || github.event.pull_request.user.login || github.actor || '' }}
+    secrets: inherit
