@@ -29,6 +29,7 @@ class AutomationHandler:
         self.LIVE_TRADING_BUTTON_Y = 212
         self.PAPER_TRADING_BUTTON_X = 506
         self.PAPER_TRADING_BUTTON_Y = 229
+        self.screenshotter = ScreenshotHandler(self.config, verbose=self.verbose)
     
     def log(self, message: str):
         """Print log message if verbose."""
@@ -200,11 +201,10 @@ class AutomationHandler:
             )
             return False
 
-        screenshotter = ScreenshotHandler(self.config, verbose=self.verbose)
         # Use more lenient thresholds - GUI rendering can vary slightly
         # threshold=0.15 allows mean_diff up to ~38 (30.10 is within this)
         # max_diff_percentage=20.0 allows up to 20% different pixels
-        is_match, result, current_path = screenshotter.compare_with_reference(
+        is_match, result, current_path = self.screenshotter.compare_with_reference(
             str(expected_path),
             "pre_credentials_state.png",
             threshold=0.15,
@@ -237,9 +237,8 @@ class AutomationHandler:
         reference_path = project_root / "test-screenshots" / "pre_credentials_state.png"
         
         self.log("Waiting for window to reach pre-credentials state...")
-        screenshotter = ScreenshotHandler(self.config, verbose=self.verbose)
         
-        success, _ = screenshotter.wait_for_state_match(
+        success, _ = self.screenshotter.wait_for_state_match(
             str(reference_path),
             "pre_credentials_state_check.png",
             timeout=timeout,
@@ -257,17 +256,35 @@ class AutomationHandler:
         reference_path = project_root / "test-screenshots" / "i_understand.png"
         
         self.log("Waiting for I understand button to appear...")
-        screenshotter = ScreenshotHandler(self.config, verbose=self.verbose)
         
         # Correct state shows: mean_diff=5.42, diff_percentage=6.06%
         # threshold=0.03 allows mean_diff up to ~7.65 (5.42/255 ≈ 0.021, using 0.03 for margin)
         # max_diff_percentage=8.0 allows up to 8% different pixels (6.06% < 8.0%)
-        success, _ = screenshotter.wait_for_state_match(
+        success, _ = self.screenshotter.wait_for_state_match(
             str(reference_path),
             "i_understand_button_check.png",
             timeout=timeout,
             threshold=0.03,
             max_diff_percentage=8.0,
+            success_message=None,  # Use default message
+            waiting_message=None   # Use default message
+        )
+        
+        return success
+
+    def wait_for_after_move_window_to_top_left(self, timeout: int = 30) -> bool:
+        """Wait until screenshot matches after_move_window_to_top_left.png reference image."""
+        project_root = Path(__file__).resolve().parent.parent
+        reference_path = project_root / "test-screenshots" / "after_move_window_to_top_left.png"
+        
+        self.log("Waiting for window to reach after-move state...")
+        
+        success, _ = self.screenshotter.wait_for_state_match(
+            str(reference_path),
+            "after_move_window_to_top_left_check.png",
+            timeout=timeout,
+            threshold=0.01,
+            max_diff_percentage=10.0,
             success_message=None,  # Use default message
             waiting_message=None   # Use default message
         )
@@ -297,11 +314,9 @@ class AutomationHandler:
         self.wait_for_pre_credentials_state()
         
         self.move_window_to_top_left(window_id)
-        # take a screenshot
-        screenshotter = ScreenshotHandler(self.config, verbose=self.verbose)
-        screenshotter.take_screenshot(os.path.join(self.config.screenshot_dir, "after_move_window_to_top_left.png"))
-        self.log("Waiting for window to fully render...")
-        time.sleep(2)
+        
+        # Wait until screenshot matches after_move_window_to_top_left.png
+        self.wait_for_after_move_window_to_top_left()
         
         # Click API Type button
         self.click_api_type_button(window_id)
