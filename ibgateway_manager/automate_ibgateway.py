@@ -32,8 +32,7 @@ class AutomationHandler:
     
     def log(self, message: str):
         """Print log message if verbose."""
-        if self.verbose:
-            print(f"[AUTOMATION] {message}", flush=True)
+        print(f"[AUTOMATION] {message}", flush=True)
     
     def run_xdotool(self, *args) -> Optional[str]:
         """Run xdotool command and return output."""
