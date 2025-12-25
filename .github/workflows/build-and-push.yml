@@ -83,7 +83,7 @@ jobs:
 
   notify:
     needs: build-and-push
-    if: always()
+    if: success()
     uses: ./.github/workflows/telegram-notify.yml
     with:
       workflow_name: Build and Push Docker Image

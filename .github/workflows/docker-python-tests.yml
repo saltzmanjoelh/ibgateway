@@ -52,7 +52,7 @@ jobs:
 
   notify:
     needs: docker-python-tests
-    if: always()
+    if: failure()
     uses: ./.github/workflows/telegram-notify.yml
     with:
       workflow_name: Python Tests (Docker)

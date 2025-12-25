@@ -48,7 +48,7 @@ jobs:
 
   notify:
     needs: native-python-tests
-    if: always()
+    if: failure()
     uses: ./.github/workflows/telegram-notify.yml
     with:
       workflow_name: Python Tests (Native)

@@ -165,7 +165,7 @@ jobs:
 
   notify:
     needs: [test-automation]
-    if: always()
+    if: failure()
     uses: ./.github/workflows/telegram-notify.yml
     with:
       workflow_name: Test Automation
