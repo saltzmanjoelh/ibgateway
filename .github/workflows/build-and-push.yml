@@ -19,6 +19,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      tags: ${{ steps.image-info.outputs.tags || '' }}
+      url: ${{ steps.image-info.outputs.url || '' }}
+      full_image: ${{ steps.image-info.outputs.full_image || '' }}
 
     steps:
       - name: Checkout repository
@@ -46,6 +50,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -57,6 +62,25 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=min
 
+      - name: Extract image tags
+        id: image-info
+        if: success()
+        run: |
+          # Format tags for display (replace newlines with commas)
+          TAGS="${{ steps.meta.outputs.tags }}"
+          TAGS_FORMATTED=$(echo "$TAGS" | tr '\n' ',' | sed 's/,$//')
+          
+          # Get the main image URL (use the first tag or 'latest' if available)
+          FIRST_TAG=$(echo "$TAGS" | head -n1 | tr -d '\n' | xargs)
+          if [ -z "$FIRST_TAG" ]; then
+            FIRST_TAG="latest"
+          fi
+          IMAGE_URL="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$FIRST_TAG"
+          
+          echo "tags=$TAGS_FORMATTED" >> $GITHUB_OUTPUT
+          echo "url=$IMAGE_URL" >> $GITHUB_OUTPUT
+          echo "full_image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" >> $GITHUB_OUTPUT
+
   notify:
     needs: build-and-push
     if: always()
@@ -67,4 +91,6 @@ jobs:
       workflow_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       commit_message: ${{ github.event.head_commit.message || github.event.pull_request.title || '' }}
       commit_author: ${{ github.event.head_commit.author.name || github.event.pull_request.user.login || github.actor || '' }}
+      image_tags: ${{ needs.build-and-push.outputs.tags || '' }}
+      image_url: ${{ needs.build-and-push.outputs.url || '' }}
     secrets: inherit

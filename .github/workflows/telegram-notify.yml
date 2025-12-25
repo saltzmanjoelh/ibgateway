@@ -21,6 +21,16 @@ on:
         required: false
         type: string
         default: ''
+      image_tags:
+        required: false
+        type: string
+        default: ''
+        description: 'Comma-separated list of image tags'
+      image_url:
+        required: false
+        type: string
+        default: ''
+        description: 'Full image URL/path'
 
 jobs:
   notify:
@@ -51,7 +61,18 @@ jobs:
             fi
           fi
           
-          MESSAGE="${STATUS_EMOJI} *${{ inputs.workflow_name }}* - ${{ inputs.status }}$COMMIT_INFO
+          IMAGE_INFO=""
+          if [ -n "${{ inputs.image_url }}" ] && [ "${{ inputs.status }}" == "success" ]; then
+            IMAGE_INFO="\n\n🐳 *Docker Image Available*"
+            if [ -n "${{ inputs.image_tags }}" ]; then
+              # Convert comma-separated tags to newline-separated list
+              TAGS=$(echo "${{ inputs.image_tags }}" | tr ',' '\n' | sed 's/^/  • /')
+              IMAGE_INFO="$IMAGE_INFO\n📦 Tags:\n$TAGS"
+            fi
+            IMAGE_INFO="$IMAGE_INFO\n\n\`docker pull ${{ inputs.image_url }}\`"
+          fi
+          
+          MESSAGE="${STATUS_EMOJI} *${{ inputs.workflow_name }}* - ${{ inputs.status }}$COMMIT_INFO$IMAGE_INFO
           
           🔗 [View Workflow](${{ inputs.workflow_url }})"
           
