@@ -294,6 +294,16 @@ class AutomationHandler:
     def automate(self) -> int:
         """Main automation function."""
         self.config.print_config()
+        
+        # Validate that both username and password are set
+        if not self.config.username:
+            self.log("ERROR: IB_USERNAME is not set. Username is required for automation.")
+            return 1
+        
+        if not self.config.password:
+            self.log("ERROR: IB_PASSWORD is not set. Password is required for automation.")
+            return 1
+        
         self.list_all_windows()
         
         window_id = self.find_ibgateway_window()
@@ -317,18 +327,17 @@ class AutomationHandler:
         self.click_trading_mode_button(window_id)
         
         # Before typing credentials, verify we reached the expected target state.
-        if self.config.username or self.config.password:
-            if not self.verify_target_state_before_credentials():
-                self.log("Aborting credential entry due to failed state verification.")
-                return 1
+        if not self.verify_target_state_before_credentials():
+            self.log("Aborting credential entry due to failed state verification.")
+            return 1
 
-            # Type username/password if provided
-            self.type_username(window_id)
-            self.type_password(window_id)
+        # Type username/password
+        self.type_username(window_id)
+        self.type_password(window_id)
 
-            # Wait for the I understand button to appear
-            self.wait_for_i_understand_button()
-            self.click_i_understand_button(window_id)
+        # Wait for the I understand button to appear
+        self.wait_for_i_understand_button()
+        self.click_i_understand_button(window_id)
         
         self.log("")
         self.log("--- Configuration Complete ---")
