@@ -190,8 +190,8 @@ class AutomationHandler:
         mode_suffix = "live" if self.config.trading_mode == "LIVE" else "paper"
         return ref_dir / f"{api_prefix}-{mode_suffix}.png"
 
-    def verify_target_state_before_credentials(self) -> bool:
-        """Verify the GUI is in the expected post-click state before typing credentials."""
+    def verify_target_state_before_credentials(self, timeout: int = 30) -> bool:
+        """Wait for the GUI to reach the expected post-click state before typing credentials."""
         expected_path = self._expected_state_screenshot_path()
 
         if not expected_path.exists():
@@ -201,34 +201,26 @@ class AutomationHandler:
             )
             return False
 
+        self.log("Waiting for target state before typing credentials...")
+
         # Use more lenient thresholds - GUI rendering can vary slightly
         # threshold=0.15 allows mean_diff up to ~38 (30.10 is within this)
         # max_diff_percentage=20.0 allows up to 20% different pixels
-        is_match, result, current_path = self.screenshotter.compare_with_reference(
+        success, result = self.screenshotter.wait_for_state_match(
             str(expected_path),
             "pre_credentials_state.png",
+            timeout=timeout,
             threshold=0.15,
-            max_diff_percentage=20.0
+            max_diff_percentage=20.0,
+            success_message="✓ Target state verified before typing credentials",
+            waiting_message=None  # Use default waiting message
         )
 
-        if not is_match or result is None:
-            if result is None:
-                return False
-            self.log("ERROR: GUI state does not match expected target state after button clicks.")
+        if not success:
+            self.log("ERROR: GUI state did not reach expected target state after button clicks.")
             self.log(f"Reference: {expected_path}")
-            self.log(f"Current:   {current_path}")
-            self.log(
-                "Comparison metrics: "
-                f"mean_diff={result['mean_diff']:.2f}, "
-                f"max_diff={result['max_diff']}, "
-                f"diff_percentage={result['diff_percentage']:.2f}%"
-            )
             return False
 
-        self.log(
-            "✓ Target state verified before typing credentials "
-            f"(mean_diff={result['mean_diff']:.2f}, diff_percentage={result['diff_percentage']:.2f}%)"
-        )
         return True
     
     def wait_for_pre_credentials_state(self, timeout: int = 30) -> bool:
@@ -324,23 +316,19 @@ class AutomationHandler:
         # Click Trading Mode button
         self.click_trading_mode_button(window_id)
         
-        # Wait for GUI to update after button clicks
-        self.log("Waiting for GUI to update after button clicks...")
-        time.sleep(3)
-        
         # Before typing credentials, verify we reached the expected target state.
         if self.config.username or self.config.password:
             if not self.verify_target_state_before_credentials():
                 self.log("Aborting credential entry due to failed state verification.")
                 return 1
 
-        # Type username/password if provided
-        self.type_username(window_id)
-        self.type_password(window_id)
+            # Type username/password if provided
+            self.type_username(window_id)
+            self.type_password(window_id)
 
-        # Wait for the I understand button to appear
-        self.wait_for_i_understand_button()
-        self.click_i_understand_button(window_id)
+            # Wait for the I understand button to appear
+            self.wait_for_i_understand_button()
+            self.click_i_understand_button(window_id)
         
         self.log("")
         self.log("--- Configuration Complete ---")
