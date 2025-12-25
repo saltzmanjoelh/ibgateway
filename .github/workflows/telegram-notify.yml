@@ -27,8 +27,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Send Telegram notification
-        if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != '' }}
         run: |
+          # Check if secrets are configured
+          if [ -z "${{ secrets.TELEGRAM_BOT_TOKEN }}" ] || [ -z "${{ secrets.TELEGRAM_CHAT_ID }}" ]; then
+            echo "Telegram secrets not configured, skipping notification"
+            exit 0
+          fi
+          
           STATUS_EMOJI=""
           if [ "${{ inputs.status }}" == "success" ]; then
             STATUS_EMOJI="✅"
