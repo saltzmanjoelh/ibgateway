@@ -26,8 +26,6 @@ class PortForwarder:
         """Print log message."""
         if self.verbose:
             print(f"[PORT-FORWARD] {message}")
-        else:
-            print(message)
     
     def check_port_listening(self, port: int) -> bool:
         """Check if a port is listening."""

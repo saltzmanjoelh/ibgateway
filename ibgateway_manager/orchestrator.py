@@ -22,7 +22,6 @@ class ServiceOrchestrator:
     def __init__(self, config: Config, verbose: bool = False):
         self.config = config
         self.verbose = verbose
-        self.debug_mode = os.getenv("DEBUG", "0") in ("1", "true")
         
         # Service managers
         self.xvfb = XvfbManager(config, verbose)
@@ -52,10 +51,7 @@ class ServiceOrchestrator:
     
     def log(self, message: str):
         """Print log message."""
-        if self.verbose:
-            print(f"[ORCHESTRATOR] {message}", flush=True)
-        else:
-            print(message, flush=True)
+        print(f"[ORCHESTRATOR] {message}", flush=True)
     
     def _create_log_files(self):
         """Create log files."""
@@ -299,9 +295,6 @@ class ServiceOrchestrator:
         if skip_automation:
             self.log("=== Skipping automation (--no-automation flag set) ===")
         else:
-            # Wait for IB Gateway window to appear, then automate configuration
-            self.log("=== Waiting for IB Gateway to start, then automating configuration ===")
-            time.sleep(5)
             
             # Start automation in background
             try:

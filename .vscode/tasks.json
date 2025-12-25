@@ -11,6 +11,16 @@
             "description": "IB Gateway Password",
             "type": "promptString",
             "password": true
+        },
+        {
+            "id": "debug",
+            "description": "Enable debug mode?",
+            "type": "pickString",
+            "options": [
+                "no",
+                "yes"
+            ],
+            "default": "no"
         }
     ],
     "tasks": [
@@ -35,7 +45,7 @@
         {
             "label": "Docker Run",
             "type": "shell",
-            "command": "docker run --name ibgateway --platform linux/amd64 -e DEBUG=1 -v $(pwd)/.env:/.env -v $(pwd)/ibgateway_manager:/ibgateway_manager -v $(pwd)/ibgateway_manager_cli.py:/ibgateway_manager_cli.py -v $(pwd)/container-screenshots:/tmp/screenshots -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 -p 5678:5678 -it --rm ibgateway",
+            "command": "docker run --name ibgateway --platform linux/amd64 $([ \"${input:debug}\" = \"yes\" ] && echo \"-e DEBUG=1\") -v $(pwd)/.env:/.env -v $(pwd)/ibgateway_manager:/ibgateway_manager -v $(pwd)/ibgateway_manager_cli.py:/ibgateway_manager_cli.py -v $(pwd)/container-screenshots:/tmp/screenshots -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 -p 5678:5678 -it --rm ibgateway",
             "group": "test",
             "presentation": {
                 "echo": true,

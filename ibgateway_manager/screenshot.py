@@ -28,8 +28,6 @@ class ScreenshotHandler:
         """Print log message."""
         if self.verbose:
             print(f"[SCREENSHOT] {message}")
-        else:
-            print(message)
     
     def validate_path(self, path: str) -> bool:
         """Validate screenshot output path for security."""

@@ -23,8 +23,6 @@ class XvfbManager:
         """Print log message."""
         if self.verbose:
             print(f"[XVFB] {message}", flush=True)
-        else:
-            print(message, flush=True)
     
     def cleanup_locks(self):
         """Clean up stale X11 locks."""
@@ -149,8 +147,6 @@ class VNCManager:
         """Print log message."""
         if self.verbose:
             print(f"[VNC] {message}", flush=True)
-        else:
-            print(message, flush=True)
     
     def start(self) -> bool:
         """Start x11vnc server."""
@@ -272,8 +268,6 @@ class NoVNCManager:
         """Print log message."""
         if self.verbose:
             print(f"[NOVNC] {message}", flush=True)
-        else:
-            print(message, flush=True)
     
     def _find_websockify(self) -> Optional[list]:
         """Find websockify command or module."""
@@ -390,8 +384,6 @@ class WindowManager:
         """Print log message."""
         if self.verbose:
             print(f"[WM] {message}", flush=True)
-        else:
-            print(message, flush=True)
     
     def start(self) -> bool:
         """Start xterm window manager."""

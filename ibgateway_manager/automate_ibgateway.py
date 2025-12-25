@@ -34,8 +34,6 @@ class AutomationHandler:
         """Print log message if verbose."""
         if self.verbose:
             print(f"[AUTOMATION] {message}", flush=True)
-        else:
-            print(message, flush=True)
     
     def run_xdotool(self, *args) -> Optional[str]:
         """Run xdotool command and return output."""
@@ -297,6 +295,9 @@ class AutomationHandler:
         self.wait_for_pre_credentials_state()
         
         self.move_window_to_top_left(window_id)
+        # take a screenshot
+        screenshotter = ScreenshotHandler(self.config, verbose=self.verbose)
+        screenshotter.take_screenshot(os.path.join(self.config.screenshot_dir, "after_move_window_to_top_left.png"))
         self.log("Waiting for window to fully render...")
         time.sleep(2)
         
