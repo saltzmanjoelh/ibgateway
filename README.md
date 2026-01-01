@@ -82,8 +82,8 @@ The automation will:
 #### Configuration Options
 
 **Username and Password**:
-- `IB_USERNAME`: IB Gateway username (optional)
-- `IB_PASSWORD`: IB Gateway password (optional)
+- `IBGATEWAY_USERNAME`: IB Gateway username (optional)
+- `IBGATEWAY_PASSWORD`: IB Gateway password (optional)
 
 **API Type Configuration**:
 - `IB_API_TYPE`: Choose between `FIX` or `IB_API` (default: `IB_API`)
@@ -99,8 +99,8 @@ The automation will:
 Create a `.env` file in the script directory with the following format:
 
 ```bash
-IB_USERNAME=your_username
-IB_PASSWORD=your_password
+IBGATEWAY_USERNAME=your_username
+IBGATEWAY_PASSWORD=your_password
 IB_API_TYPE=IB_API
 IB_TRADING_MODE=PAPER
 ```
@@ -132,8 +132,8 @@ docker run --platform linux/amd64 \
 **FIX API with Live Trading and credentials**:
 ```bash
 docker run --platform linux/amd64 \
-  -e IB_USERNAME=myusername \
-  -e IB_PASSWORD=mypassword \
+  -e IBGATEWAY_USERNAME=myusername \
+  -e IBGATEWAY_PASSWORD=mypassword \
   -e IB_API_TYPE=FIX \
   -e IB_TRADING_MODE=LIVE \
   -p 5900:5900 \
@@ -148,8 +148,8 @@ docker run --platform linux/amd64 \
 ```bash
 # Create .env file
 cat > .env << EOF
-IB_USERNAME=myusername
-IB_PASSWORD=mypassword
+IBGATEWAY_USERNAME=myusername
+IBGATEWAY_PASSWORD=mypassword
 IB_API_TYPE=IB_API
 IB_TRADING_MODE=PAPER
 EOF
@@ -169,8 +169,8 @@ docker run --platform linux/amd64 \
 - `RESOLUTION`: Display resolution (default: `1280x800`)
 - `USER`: User to run as (default: `root`)
 - `SCREENSHOT_PORT`: Port for screenshot HTTP server (default: `8080`)
-- `IB_USERNAME`: IB Gateway username (optional, can also be set in `.env` file)
-- `IB_PASSWORD`: IB Gateway password (optional, can also be set in `.env` file)
+- `IBGATEWAY_USERNAME`: IB Gateway username (optional, can also be set in `.env` file)
+- `IBGATEWAY_PASSWORD`: IB Gateway password (optional, can also be set in `.env` file)
 - `IB_API_TYPE`: API type - `FIX` or `IB_API` (default: `IB_API`, can also be set in `.env` file)
 - `IB_TRADING_MODE`: Trading mode - `LIVE` or `PAPER` (default: `PAPER`, can also be set in `.env` file)
 

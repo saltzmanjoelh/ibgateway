@@ -66,8 +66,8 @@ jobs:
             -p ${{ matrix.config.screenshot_port }}:8080 \
             -e IB_API_TYPE=${{ matrix.config.api_type }} \
             -e IB_TRADING_MODE=${{ matrix.config.trading_mode }} \
-            -e IB_USERNAME=${{ secrets.IB_USERNAME }} \
-            -e IB_PASSWORD=${{ secrets.IB_PASSWORD }} \
+            -e IBGATEWAY_USERNAME=${{ secrets.IBGATEWAY_USERNAME }} \
+            -e IBGATEWAY_PASSWORD=${{ secrets.IBGATEWAY_PASSWORD }} \
             ibgateway:latest
 
       - name: Wait for container to be ready

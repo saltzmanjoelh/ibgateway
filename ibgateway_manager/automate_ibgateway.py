@@ -133,7 +133,7 @@ class AutomationHandler:
     def type_username(self, window_id: str):
         """Type username into the focused field."""
         if not self.config.username:
-            self.log("Skipping username entry (IB_USERNAME not set)")
+            self.log("Skipping username entry (IBGATEWAY_USERNAME not set)")
             return
         
         self.log("--- Typing Username ---")
@@ -144,7 +144,7 @@ class AutomationHandler:
     def type_password(self, window_id: str):
         """Type password (tab to password field first)."""
         if not self.config.password:
-            self.log("Skipping password entry (IB_PASSWORD not set)")
+            self.log("Skipping password entry (IBGATEWAY_PASSWORD not set)")
             return
         
         self.log("--- Typing Password ---")
@@ -297,11 +297,11 @@ class AutomationHandler:
         
         # Validate that both username and password are set
         if not self.config.username:
-            self.log("ERROR: IB_USERNAME is not set. Username is required for automation.")
+            self.log("ERROR: IBGATEWAY_USERNAME is not set. Username is required for automation.")
             return 1
         
         if not self.config.password:
-            self.log("ERROR: IB_PASSWORD is not set. Password is required for automation.")
+            self.log("ERROR: IBGATEWAY_PASSWORD is not set. Password is required for automation.")
             return 1
         
         self.list_all_windows()

@@ -34,8 +34,8 @@ class Config:
                 break
         
         # Configuration values (env vars override .env file)
-        self.username = os.getenv("IB_USERNAME", "")
-        self.password = os.getenv("IB_PASSWORD", "")
+        self.username = os.getenv("IBGATEWAY_USERNAME", "")
+        self.password = os.getenv("IBGATEWAY_PASSWORD", "")
         self.api_type = os.getenv("IB_API_TYPE", "IB_API").upper()
         self.trading_mode = os.getenv("IB_TRADING_MODE", "PAPER").upper()
         self.display = os.getenv("DISPLAY", ":99")
