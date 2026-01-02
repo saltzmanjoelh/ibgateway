@@ -32,6 +32,9 @@ RUN chmod +x /entrypoint.sh
 
 EXPOSE 5900 8080 4003 4004 5678
 
+HEALTHCHECK --start-period=180s --interval=10s --timeout=2s --retries=12 \
+  CMD python3 -m ibgateway_manager.healthcheck
+
 CMD ["/entrypoint.sh"]
 
 # docker run --platform linux/amd64 -v $(pwd)/automate-ibgateway.sh:/automate-ibgateway.sh -p 5900:5900 -it --rm ubuntu-novnc

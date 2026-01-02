@@ -56,6 +56,15 @@ docker run --platform linux/amd64 \
 
 **Note**: IB Gateway only accepts connections from `127.0.0.1` (localhost). The container uses `socat` to forward external ports 4003 and 4004 to the internal ports 4001 and 4002 respectively. This solves the issue of IB Gateway needing to be configured to support trusted IPs. Ports 4001 and 4002 are internal-only and should not be exposed directly from the container.
 
+## Container health
+
+This image defines a Docker **HEALTHCHECK**. The container is only marked **healthy** once IB Gateway is actually accepting TCP connections on the internal API port based on `IB_TRADING_MODE`:
+
+- `IB_TRADING_MODE=LIVE`  → checks `127.0.0.1:4001`
+- `IB_TRADING_MODE=PAPER` → checks `127.0.0.1:4002`
+
+This check runs **inside** the container (so it can probe the internal-only ports even though you expose 4003/4004 externally via `socat`).
+
 ## Automation
 
 The image includes Python-based automation for GUI interactions using xdotool. Automation is handled automatically when the container starts, or can be run manually using the CLI tool.
