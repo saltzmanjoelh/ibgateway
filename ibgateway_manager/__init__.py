@@ -10,6 +10,7 @@ from .config import Config
 from .automate_ibgateway import AutomationHandler
 from .screenshot import ScreenshotHandler
 from .port_forwarder import PortForwarder
+from .connection_status import check_connection_status, ConnectionStatus, OverallStatus
 
 __all__ = [
     "IBGatewayCLI",
@@ -17,5 +18,8 @@ __all__ = [
     "AutomationHandler",
     "ScreenshotHandler",
     "PortForwarder",
+    "check_connection_status",
+    "ConnectionStatus",
+    "OverallStatus",
 ]
 

@@ -65,6 +65,8 @@ class ScreenshotServer(BaseHTTPRequestHandler):
             self._handle_latest_screenshot()
         elif path == "/screenshots" or path == "/screenshots/":
             self._handle_list_screenshots()
+        elif path == "/health":
+            self._handle_health_check()
         elif path == "/" or path == "/index.html":
             self._handle_index()
         else:
@@ -225,10 +227,19 @@ class ScreenshotServer(BaseHTTPRequestHandler):
         <h3>GET <code>/screenshots/&lt;filename&gt;</code></h3>
         <p>View a specific screenshot image.</p>
     </div>
-    
+
+    <div class="endpoint">
+        <h3>GET <code>/health</code></h3>
+        <p>Visual connection status check. Captures a screenshot and analyses the IB Gateway Connection Status table.</p>
+        <p>Returns JSON with <code>overall</code> status (<code>healthy</code> / <code>degraded</code> / <code>unhealthy</code>) and per-row color analysis.</p>
+        <p>HTTP 200 = healthy or degraded &nbsp;|&nbsp; HTTP 503 = unhealthy.</p>
+        <p><a href="/health">Try it</a></p>
+    </div>
+
     <h2>Quick Actions</h2>
     <p><a href="/screenshot">Take Screenshot Now</a></p>
     <p><a href="/screenshots">View All Screenshots</a></p>
+    <p><a href="/health">Check Connection Status</a></p>
 </body>
 </html>"""
         
@@ -237,6 +248,37 @@ class ScreenshotServer(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(html.encode())
     
+    def _handle_health_check(self):
+        """Handle /health endpoint - visual connection status check."""
+        from .connection_status import check_connection_status, OverallStatus
+
+        if not self.screenshot_handler:
+            self.send_error(500, "Screenshot handler not configured")
+            return
+
+        try:
+            status = check_connection_status(self.screenshot_handler.config)
+            http_code = 200 if status.overall != OverallStatus.UNHEALTHY else 503
+
+            self.send_response(http_code)
+            self.send_header("Content-type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "http://localhost")
+            self.end_headers()
+            self.wfile.write(json.dumps(status.to_dict(), indent=2).encode())
+        except Exception as exc:
+            self.send_response(503)
+            self.send_header("Content-type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "http://localhost")
+            self.end_headers()
+            error_response = {
+                "overall": "unhealthy",
+                "rows": [],
+                "error": str(exc),
+                "screenshot_path": None,
+                "timestamp": time.time(),
+            }
+            self.wfile.write(json.dumps(error_response).encode())
+
     def log_message(self, format, *args):
         """Custom logging with timestamp."""
         print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {format % args}")

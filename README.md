@@ -37,7 +37,7 @@ You can either use a .env file or pass them directly. Prefer .env to avoid expos
 
 ```bash
 docker run --platform linux/amd64 \
-  -v $(pwd/.env):/.env \
+  -v $(pwd)/.env:/.env \
   -e IB_API_TYPE=IB_API \
   -e IB_TRADING_MODE=PAPER \
   -p 5900:5900 \
@@ -198,6 +198,29 @@ docker run -d --name ibgateway --platform linux/amd64 \
   -p 5900:5900 -p 8080:8080 -p 4003:4003 -p 4004:4004 \
   ibgateway:latest
 ```
+
+## Development with Poetry
+
+This project uses Poetry for dependency and virtualenv management. The `pyproject.toml` is already configured for Poetry.
+
+Quick setup (run on your host machine):
+
+```bash
+# ensure Poetry is installed (https://python-poetry.org/docs/#installation)
+poetry --version || echo "Install Poetry: pipx install poetry or see https://python-poetry.org/docs/#installation"
+
+# create and use a virtualenv with the system python3
+poetry env use "$(command -v python3)"
+
+# install dependencies into the Poetry-managed venv
+poetry install
+
+# spawn a shell inside the venv
+poetry shell
+```
+
+VS Code is configured to use the Poetry-created `.venv` at the workspace root via `.vscode/settings.json`. If you prefer a different interpreter, change `python.defaultInterpreterPath` in that file.
+
 
 
 #### Take a Screenshot
