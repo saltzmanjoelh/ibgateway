@@ -38,6 +38,7 @@ _STATUS_ROWS: List[Tuple[str, int, int]] = [
     ("api_server",           685, 183),
     ("market_data_farm",     685, 207),
     ("historical_data_farm", 685, 230),
+    ("api_client",           685, 252),  # only present when clients are connected
 ]
 
 # Number of pixels to average around the sample center (7×7 block).
@@ -129,15 +130,21 @@ def _compute_overall(rows: List[RowStatus]) -> OverallStatus:
         return OverallStatus.UNHEALTHY
 
     # Farm rows: GREEN or YELLOW are both acceptable
-    farm_rows = [r for r in rows if r.name != "api_server"]
-    for row in farm_rows:
+    # api_client is optional (only present when clients are connected); unknown is OK there
+    required_rows = [r for r in rows if r.name in ("market_data_farm", "historical_data_farm")]
+    for row in required_rows:
         if row.color not in (CellColor.GREEN, CellColor.YELLOW):
             return OverallStatus.UNHEALTHY
 
-    if all(r.color == CellColor.GREEN for r in rows):
+    _required = {"api_server", "market_data_farm", "historical_data_farm"}
+    required_all_green = all(r.color == CellColor.GREEN for r in rows if r.name in _required)
+    api_client = next((r for r in rows if r.name == "api_client"), None)
+    api_client_ok = api_client is None or api_client.color in (CellColor.GREEN, CellColor.UNKNOWN)
+
+    if required_all_green and api_client_ok:
         return OverallStatus.HEALTHY
 
-    # API is green, at least one farm is yellow
+    # API is green, at least one required farm is yellow
     return OverallStatus.DEGRADED
 
 
