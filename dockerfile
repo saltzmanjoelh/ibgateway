@@ -32,7 +32,7 @@ RUN chmod +x /entrypoint.sh
 
 EXPOSE 5900 8080 4003 4004 5678
 
-HEALTHCHECK --start-period=180s --interval=10s --timeout=2s --retries=0 \
+HEALTHCHECK --start-period=180s --interval=10s --timeout=2s \
   CMD python3 -m ibgateway_manager.healthcheck
 
 CMD ["/entrypoint.sh"]

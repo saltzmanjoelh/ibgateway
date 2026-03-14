@@ -21,6 +21,20 @@ import urllib.request
 from dataclasses import dataclass
 
 
+def _log(message: str) -> None:
+    """Write to both stderr (docker inspect health log) and PID 1's stdout (docker logs)."""
+    line = message + "\n"
+    # Always write to stderr for docker inspect health log
+    sys.stderr.write(line)
+    sys.stderr.flush()
+    # Also write to PID 1's stdout so the message appears in docker logs
+    try:
+        with open("/proc/1/fd/1", "w") as f:
+            f.write(line)
+    except OSError:
+        pass
+
+
 @dataclass(frozen=True)
 class HealthcheckConfig:
     host: str
@@ -95,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cfg = build_config_from_env()
     except Exception as exc:
-        print(f"[HEALTHCHECK] invalid config: {exc}", file=sys.stderr, flush=True)
+        _log(f"[HEALTHCHECK] invalid config: {exc}")
         return 1
 
     # --- Visual check (preferred) ---
@@ -104,39 +118,34 @@ def main(argv: list[str] | None = None) -> int:
     screenshot_path = detail.get("screenshot_path") if detail else None
     screenshot_info = f" | screenshot: {screenshot_path}" if screenshot_path else ""
 
+    rows = detail.get("rows", []) if detail else []
+    summary = ", ".join(f"{r['name']}={r['color']}" for r in rows) if rows else "no row data"
+
     if visual_status == "healthy":
-        print(f"[HEALTHCHECK] healthy{screenshot_info}", file=sys.stderr, flush=True)
+        _log(f"[HEALTHCHECK] healthy: {summary}{screenshot_info}")
         return 0
 
     if visual_status == "degraded":
-        rows = detail.get("rows", []) if detail else []
-        summary = ", ".join(f"{r['name']}={r['color']}" for r in rows)
-        print(f"[HEALTHCHECK] degraded: {summary}{screenshot_info}", file=sys.stderr, flush=True)
+        _log(f"[HEALTHCHECK] degraded: {summary}{screenshot_info}")
         return 0
 
     if visual_status == "unhealthy":
         error_msg = detail.get("error") if detail else None
-        rows = detail.get("rows", []) if detail else []
-        summary = ", ".join(f"{r['name']}={r['color']}" for r in rows) if rows else "no row data"
-        print(
-            f"[HEALTHCHECK] unhealthy (visual): {summary}{screenshot_info}"
-            + (f" | error: {error_msg}" if error_msg else ""),
-            file=sys.stderr,
-            flush=True,
+        _log(
+            f"[HEALTHCHECK] unhealthy: {summary}{screenshot_info}"
+            + (f" | error: {error_msg}" if error_msg else "")
         )
         return 1
 
     # visual_status == "unavailable": screenshot server not yet up, fall back to TCP
     ok = check_tcp_listening(cfg)
     if ok:
-        print(f"[HEALTHCHECK] healthy (tcp fallback): {cfg.host}:{cfg.port}", file=sys.stderr, flush=True)
+        _log(f"[HEALTHCHECK] healthy (tcp fallback): {cfg.host}:{cfg.port}")
         return 0
 
-    print(
+    _log(
         f"[HEALTHCHECK] not ready: tcp://{cfg.host}:{cfg.port} (timeout={cfg.timeout_seconds}s)"
-        " and visual check unavailable",
-        file=sys.stderr,
-        flush=True,
+        " and visual check unavailable"
     )
     return 1
 
