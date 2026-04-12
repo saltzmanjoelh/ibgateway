@@ -308,8 +308,8 @@ class ServiceOrchestrator:
         # Try /ibgateway_manager_cli.py first (Docker container path), then fallback to script location
         cli_script = "/ibgateway_manager_cli.py"
         if not Path(cli_script).exists():
-            # Try to find it relative to this module
-            script_dir = Path(__file__).resolve().parent.parent.parent
+            # Try to find it relative to this module (repo root is parent of ibgateway_manager/)
+            script_dir = Path(__file__).resolve().parent.parent
             potential_path = script_dir / "ibgateway_manager_cli.py"
             if potential_path.exists():
                 cli_script = str(potential_path)
