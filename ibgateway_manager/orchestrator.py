@@ -16,6 +16,25 @@ from .services import XvfbManager, VNCManager, NoVNCManager, WindowManager
 from .port_forwarder import PortForwarder
 
 
+def resolve_ibgateway_manager_cli_script(
+    docker_cli_path: Optional[Path] = None,
+    orchestrator_file: Optional[Path] = None,
+) -> str:
+    """Resolve path to ``ibgateway_manager_cli.py`` for Docker or a normal repo checkout.
+
+    In the container, the CLI lives at ``/ibgateway_manager_cli.py``. In development,
+    it lives at the repository root (parent of the ``ibgateway_manager`` package).
+    """
+    docker = docker_cli_path if docker_cli_path is not None else Path("/ibgateway_manager_cli.py")
+    orchestrator = orchestrator_file if orchestrator_file is not None else Path(__file__).resolve()
+    if docker.is_file():
+        return str(docker)
+    candidate = orchestrator.parent.parent / "ibgateway_manager_cli.py"
+    if candidate.is_file():
+        return str(candidate)
+    return str(docker)
+
+
 class ServiceOrchestrator:
     """Orchestrates all IB Gateway services."""
     
@@ -305,14 +324,7 @@ class ServiceOrchestrator:
             return 1
         
         # Determine CLI script path (needed for both automation and screenshot server)
-        # Try /ibgateway_manager_cli.py first (Docker container path), then fallback to script location
-        cli_script = "/ibgateway_manager_cli.py"
-        if not Path(cli_script).exists():
-            # Try to find it relative to this module (repo root is parent of ibgateway_manager/)
-            script_dir = Path(__file__).resolve().parent.parent
-            potential_path = script_dir / "ibgateway_manager_cli.py"
-            if potential_path.exists():
-                cli_script = str(potential_path)
+        cli_script = resolve_ibgateway_manager_cli_script()
         
         if skip_automation:
             self.log("=== Skipping automation (--no-automation flag set) ===")
