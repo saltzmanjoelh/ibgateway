@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 
+# Virtualenv (poetry in-project)
+.venv/
+
 # Python cache
 __pycache__/
 *.py[cod]

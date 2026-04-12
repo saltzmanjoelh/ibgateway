@@ -10,6 +10,14 @@ Docker image for running Interactive Brokers Gateway in a headless environment w
 - **Python CLI Tool**: Unified command-line interface for automation, testing, and screenshot management
 - **Automation Support**: Automated GUI configuration using xdotool
 
+## Python development (tests & CLI)
+
+For a local Poetry environment, venv layout, and unit tests, see **[DEVELOPMENT.md](DEVELOPMENT.md)**. Quick path:
+
+```bash
+./scripts/dev-setup.sh && source .venv/bin/activate
+```
+
 ## Building
 
 ```bash
