@@ -30,7 +30,9 @@ RUN ./scripts/setup.sh && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 5900 8080 4003 4004 5678
+# 5900 noVNC, 8080 screenshot HTTP server, 8090 MCP server (Streamable HTTP),
+# 4003/4004 IB API live/paper, 5678 debugpy
+EXPOSE 5900 8080 8090 4003 4004 5678
 
 HEALTHCHECK --start-period=180s --interval=10s --timeout=2s --retries=1 \
   CMD python3 -m ibgateway_manager.healthcheck
