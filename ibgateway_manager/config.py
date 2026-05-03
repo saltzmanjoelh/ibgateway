@@ -14,10 +14,10 @@ except ImportError:
 
 class Config:
     """Configuration management with .env file and environment variable support."""
-    
+
     def __init__(self):
         self.load_config()
-    
+
     def load_config(self):
         """Load configuration from .env file and environment variables."""
         # Try to load .env file from script directory or current directory
@@ -27,12 +27,12 @@ class Config:
             Path(".env"),
             Path.cwd() / ".env"
         ]
-        
+
         for env_file in env_files:
             if env_file.exists() and HAS_DOTENV:
                 load_dotenv(env_file)
                 break
-        
+
         # Configuration values (env vars override .env file)
         self.username = os.getenv("IBGATEWAY_USERNAME", "")
         self.password = os.getenv("IBGATEWAY_PASSWORD", "")
@@ -42,15 +42,17 @@ class Config:
         self.resolution = os.getenv("RESOLUTION", "1024x768")
         self.screenshot_dir = os.getenv("SCREENSHOT_DIR", "/tmp/screenshots")
         self.screenshot_port = int(os.getenv("SCREENSHOT_PORT", "8080"))
-        
+        self.mcp_port = int(os.getenv("MCP_PORT", "8090"))
+        self.mcp_host = os.getenv("MCP_HOST", "127.0.0.1")
+
         # Validate API type
         if self.api_type not in ["FIX", "IB_API"]:
             raise ValueError(f"IB_API_TYPE must be 'FIX' or 'IB_API', got: {self.api_type}")
-        
+
         # Validate trading mode
         if self.trading_mode not in ["LIVE", "PAPER"]:
             raise ValueError(f"IB_TRADING_MODE must be 'LIVE' or 'PAPER', got: {self.trading_mode}")
-    
+
     def print_config(self):
         """Print current configuration."""
         print("--- IB Gateway Configuration ---")
@@ -62,5 +64,6 @@ class Config:
         print(f"Resolution: {self.resolution}")
         print(f"Screenshot Directory: {self.screenshot_dir}")
         print(f"Screenshot Port: {self.screenshot_port}")
+        print(f"MCP Host: {self.mcp_host}")
+        print(f"MCP Port: {self.mcp_port}")
         print()
-
