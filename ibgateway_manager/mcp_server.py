@@ -7,14 +7,15 @@ path. An optional bearer token (env var ``MCP_AUTH_TOKEN``) can be enforced
 in addition.
 
 Tools:
-  - get_screenshot           Capture a fresh screenshot, return PNG image.
-  - list_screenshots         List screenshots already on disk.
-  - get_screenshot_by_name   Return an existing screenshot by filename.
-  - get_connection_status    Visual analysis of the Connection Status table.
-  - get_health               Combined visual + TCP fallback status.
-  - automate_login           Run the xdotool-driven login/MFA flow.
-  - restart_gateway          Kill and relaunch the IB Gateway process.
-  - get_gateway_logs         Tail one of the orchestrator log files.
+  - get_screenshot                  Capture a fresh screenshot, return PNG image.
+  - list_screenshots                List screenshots already on disk.
+  - get_screenshot_by_name          Return an existing screenshot by filename.
+  - get_connection_status           Visual analysis of the Connection Status table.
+  - get_health                      Combined visual + TCP fallback status.
+  - automate_login                  Run the xdotool-driven login/MFA flow.
+  - retry_login_after_mfa_failure   Recovery for the post-MFA-failure dialog.
+  - restart_gateway                 Kill and relaunch the IB Gateway process.
+  - get_gateway_logs                Tail one of the orchestrator log files.
 """
 
 from __future__ import annotations
@@ -193,6 +194,30 @@ def build_server(config: Optional[Config] = None) -> FastMCP:
         log_path = _LOG_FILES["automate"]
         if Path(log_path).exists():
             log_tail = Path(log_path).read_text()[-4000:]
+        return {"exit_code": rc, "log_tail": log_tail}
+
+    @mcp.tool()
+    def retry_login_after_mfa_failure() -> Dict[str, Any]:
+        """Recovery for the IB Gateway 'UNRECOGNIZED USERNAME OR PASSWORD' dialog.
+
+        That dialog often actually means MFA wasn't triggered on the previous
+        login (credentials are fine; the auth round-trip just didn't complete).
+        This tool dismisses the dialog, refocuses the password field, and
+        resubmits — IB Gateway preserves the password contents so we don't
+        retype.
+
+        Manual / on-demand only — call this after observing the failure mode
+        in get_screenshot. It is NOT invoked automatically anywhere.
+
+        Returns exit_code (0 = success, 1 = couldn't find gateway window) and
+        the tail of the automation log for diagnostics.
+        """
+        handler = AutomationHandler(cfg, verbose=False)
+        rc = handler.retry_login_after_mfa_failure()
+        log_tail = ""
+        log_path = _LOG_FILES["automate"]
+        if Path(log_path).exists():
+            log_tail = Path(log_path).read_text()[-2000:]
         return {"exit_code": rc, "log_tail": log_tail}
 
     @mcp.tool()
