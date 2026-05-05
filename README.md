@@ -81,16 +81,17 @@ The container also exposes an [MCP](https://modelcontextprotocol.io/) server (St
 
 ### Tools exposed
 
-| Tool                        | Description                                                  |
-| --------------------------- | ------------------------------------------------------------ |
-| `get_screenshot`            | Capture a fresh screenshot, return PNG image                 |
-| `list_screenshots`          | List screenshots already on disk                             |
-| `get_screenshot_by_name`    | Return an existing screenshot by filename                    |
-| `get_connection_status`     | Visual analysis of the Connection Status table               |
-| `get_health`                | Combined visual + TCP-fallback status (matches HEALTHCHECK)  |
-| `automate_login`            | Run the xdotool login/MFA flow (optional credential overrides) |
-| `restart_gateway`           | Kill and relaunch the IB Gateway process                     |
-| `get_gateway_logs`          | Tail one of the orchestrator log files                       |
+| Tool                            | Description                                                                       |
+| ------------------------------- | --------------------------------------------------------------------------------- |
+| `get_screenshot`                | Capture a fresh screenshot of the IB Gateway display, return PNG image            |
+| `list_screenshots`              | List all screenshots saved in the screenshot directory (filename, path, size, ctime) |
+| `get_screenshot_by_name`        | Return an existing screenshot by filename (path-traversal guarded, `.png` only)   |
+| `get_connection_status`         | Visual analysis of the IB Gateway Connection Status table                         |
+| `get_health`                    | Combined visual + TCP-fallback health check (matches Docker HEALTHCHECK)          |
+| `automate_login`                | Run the xdotool login/MFA flow (optional `trading_mode`, `api_type`, `username`, `password` overrides apply to that call only) |
+| `retry_login_after_mfa_failure` | Recovery for the post-MFA "UNRECOGNIZED USERNAME OR PASSWORD" dialog — dismisses, refocuses, resubmits |
+| `restart_gateway`               | SIGTERM/SIGKILL the IB Gateway process and relaunch it (does not re-run automation) |
+| `get_gateway_logs`              | Tail one of the orchestrator log files (`automate`, `screenshot-server`, `port-forward`, `x11vnc`, `websockify`, `mcp-server`) |
 
 ### Environment variables
 
