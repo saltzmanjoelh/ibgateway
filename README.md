@@ -7,6 +7,7 @@ Docker image for running Interactive Brokers Gateway in a headless environment w
 - **Headless IB Gateway**: Runs IB Gateway under Xvfb (virtual framebuffer)
 - **Web-based VNC Access**: Access the GUI via noVNC in your web browser
 - **Screenshot Service**: Take screenshots and view them via HTTP API
+- **MCP Server**: Drive the gateway from Claude / any MCP client over Streamable HTTP
 - **Python CLI Tool**: Unified command-line interface for automation, testing, and screenshot management
 - **Automation Support**: Automated GUI configuration using xdotool
 
@@ -51,6 +52,7 @@ docker run --platform linux/amd64 \
 
 - **5900**: noVNC web interface (access at `http://localhost:5900`)
 - **8080**: Screenshot HTTP service (access at `http://localhost:8080`)
+- **8090**: MCP server (Streamable HTTP, mounted at `/mcp`). Bound to `127.0.0.1` by default; reach it through SSM port-forwarding when deployed.
 - **4003**: IB Gateway Live Trading Port (forwarded to internal port 4001)
 - **4004**: IB Gateway Paper Trading Port (forwarded to internal port 4002)
 
@@ -72,6 +74,60 @@ The image includes Python-based automation for GUI interactions using xdotool. A
 ## Screenshot Service
 
 The screenshot service provides an HTTP API to take and view screenshots of the IB Gateway display.
+
+## MCP Server
+
+The container also exposes an [MCP](https://modelcontextprotocol.io/) server (Streamable HTTP) on port **8090**, mounted at `/mcp`. It is started by the orchestrator alongside the screenshot service. The server binds to `127.0.0.1` by default and is intended to be reached via SSM port-forwarding when deployed in AWS — there is no public network path.
+
+### Tools exposed
+
+| Tool                        | Description                                                  |
+| --------------------------- | ------------------------------------------------------------ |
+| `get_screenshot`            | Capture a fresh screenshot, return PNG image                 |
+| `list_screenshots`          | List screenshots already on disk                             |
+| `get_screenshot_by_name`    | Return an existing screenshot by filename                    |
+| `get_connection_status`     | Visual analysis of the Connection Status table               |
+| `get_health`                | Combined visual + TCP-fallback status (matches HEALTHCHECK)  |
+| `automate_login`            | Run the xdotool login/MFA flow (optional credential overrides) |
+| `restart_gateway`           | Kill and relaunch the IB Gateway process                     |
+| `get_gateway_logs`          | Tail one of the orchestrator log files                       |
+
+### Environment variables
+
+- `MCP_HOST` (default `127.0.0.1`) — bind address. Keep `127.0.0.1` unless you know what you are doing.
+- `MCP_PORT` (default `8090`)
+- `MCP_AUTH_TOKEN` (optional) — when set, every request must include `Authorization: Bearer <token>`. Useful as defence in depth on top of the SSM tunnel.
+- `SKIP_MCP=1` — skip starting the MCP server in `start-services` (orchestrator) mode.
+
+### Connecting from a developer laptop (deployed via ibkr_core)
+
+The companion `ibkr_core` repo deploys this image on AWS ECS and includes a tunnel script that opens an SSM port-forward for the MCP port:
+
+```bash
+# in the ibkr_core repo
+bash scripts/start-gateway-tunnel.sh
+# → MCP available at http://127.0.0.1:8090/mcp
+```
+
+Add it to your local Claude / MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "ibgateway": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:8090/mcp"
+    }
+  }
+}
+```
+
+### Running the MCP server manually
+
+```bash
+# inside the container
+docker exec ibgateway python3 /ibgateway_manager_cli.py mcp-server --port 8090
+```
 
 
 ### IB Gateway Configuration
@@ -178,6 +234,9 @@ docker run --platform linux/amd64 \
 - `RESOLUTION`: Display resolution (default: `1280x800`)
 - `USER`: User to run as (default: `root`)
 - `SCREENSHOT_PORT`: Port for screenshot HTTP server (default: `8080`)
+- `MCP_PORT`: Port for MCP server (default: `8090`)
+- `MCP_HOST`: Bind address for MCP server (default: `127.0.0.1`)
+- `MCP_AUTH_TOKEN`: Optional bearer token enforced by the MCP server
 - `IBGATEWAY_USERNAME`: IB Gateway username (optional, can also be set in `.env` file)
 - `IBGATEWAY_PASSWORD`: IB Gateway password (optional, can also be set in `.env` file)
 - `IB_API_TYPE`: API type - `FIX` or `IB_API` (default: `IB_API`, can also be set in `.env` file)
@@ -307,6 +366,11 @@ docker exec ibgateway python3 /ibgateway_manager_cli.py screenshot --output /pat
 **Start screenshot HTTP server**:
 ```bash
 docker exec ibgateway python3 /ibgateway_manager_cli.py screenshot-server --port 8080
+```
+
+**Start MCP server**:
+```bash
+docker exec ibgateway python3 /ibgateway_manager_cli.py mcp-server --port 8090
 ```
 
 **Compare two screenshots**:
