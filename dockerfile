@@ -19,6 +19,7 @@ RUN cd /opt/novnc/utils/websockify && pip3 install .
 COPY ibgateway_manager/ /ibgateway_manager/
 COPY ibgateway_manager_cli.py /ibgateway_manager_cli.py
 COPY pyproject.toml /pyproject.toml
+COPY poetry.lock /poetry.lock
 COPY test-screenshots/ /test-screenshots/
 
 # 3. Update and install basic tools + Xvfb and Install Poetry
