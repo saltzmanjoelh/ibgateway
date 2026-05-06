@@ -1111,4 +1111,4 @@ full = ["numpy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "1684513c27bd434ae60dd2fb16a9f3e16e79ee871742d9cb69b6e9b8d2d0b30c"
+content-hash = "da1a6ccd223b8e1b689e02752d640791abcba95bf29d6308372cb93248c1ee21"
