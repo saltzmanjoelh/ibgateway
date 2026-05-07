@@ -24,6 +24,32 @@ _logger = logging.getLogger(__name__)
 _TIMEOUT_SECONDS = 5.0
 
 
+def launch_reason() -> str:
+    """Resolve a human-readable label for whatever triggered this gateway run.
+
+    Resolution order:
+      1. ``IBGATEWAY_LAUNCH_REASON`` env var — caller-supplied free-form
+         string (e.g. set by the CFN task definition for ECS, or by a
+         workflow's ``docker run -e`` for CI). This wins when set so each
+         caller can describe itself precisely.
+      2. ``GITHUB_ACTIONS=true`` — auto-build a CI label from the standard
+         GitHub Actions env vars so we never silently fall back to "unknown"
+         on a runner that forgot to set the explicit env var.
+      3. ``"unknown"`` — explicit fallback so the operator sees "we don't
+         know who started this" rather than nothing.
+    """
+    explicit = os.getenv("IBGATEWAY_LAUNCH_REASON", "").strip()
+    if explicit:
+        return explicit
+    if os.getenv("GITHUB_ACTIONS", "").lower() == "true":
+        wf = os.getenv("GITHUB_WORKFLOW", "?")
+        repo = os.getenv("GITHUB_REPOSITORY", "?")
+        run_id = os.getenv("GITHUB_RUN_ID", "?")
+        server = os.getenv("GITHUB_SERVER_URL", "https://github.com").rstrip("/")
+        return f"ci:{wf} ({server}/{repo}/actions/runs/{run_id})"
+    return "unknown"
+
+
 def notify_slack(text: str) -> bool:
     """POST ``text`` to the Slack incoming webhook in ``SLACK_WEBHOOK_URL``.
 

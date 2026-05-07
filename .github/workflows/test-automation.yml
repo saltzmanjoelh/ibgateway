@@ -68,6 +68,7 @@ jobs:
             -e IB_TRADING_MODE=${{ matrix.config.trading_mode }} \
             -e IBGATEWAY_USERNAME=${{ secrets.IBGATEWAY_USERNAME }} \
             -e IBGATEWAY_PASSWORD=${{ secrets.IBGATEWAY_PASSWORD }} \
+            -e IBGATEWAY_LAUNCH_REASON="ci:test-automation [${{ matrix.config.name }}] (${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" \
             ibgateway:latest
 
       - name: Wait for container to be ready
