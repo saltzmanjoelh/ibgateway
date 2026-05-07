@@ -291,6 +291,69 @@ class AutomationHandler:
         self.click_at_coordinates(window_id, 354, 391, "I understand")
         self.log("✓ I understand button clicked")
 
+    def retry_login_after_mfa_failure(self) -> int:
+        """Recovery for the post-MFA "UNRECOGNIZED USERNAME OR PASSWORD" dialog.
+
+        That dialog often actually means the previous attempt's MFA round-trip
+        didn't complete; the credentials themselves are still valid and IB
+        Gateway preserves the password in the field. We just need to dismiss
+        the error overlay, refocus the password field, and resubmit — IBKR
+        will then send a fresh MFA push.
+
+        Steps:
+          1. Look for an obvious error-dialog window by name and dismiss it
+             with Return. If no candidate matches, fall back to a single
+             Escape, which closes most modal dialogs without side effects.
+          2. Activate the main "IBKR Gateway" window.
+          3. Send Tab (jump from username → password, mirroring what
+             ``type_password`` does) and Return to resubmit.
+
+        Returns 0 on success; 1 if the main IBKR Gateway window can't be
+        located.
+        """
+        self.log("--- Retry login after MFA failure ---")
+
+        # Step 1: best-effort dismiss the error dialog. We try several
+        # candidate window-name substrings because the exact wording has
+        # varied across IB Gateway versions.
+        dismissed = False
+        for needle in (
+            "UNRECOGNIZED",
+            "Login Failed",
+            "Failed Login",
+            "Invalid",
+        ):
+            wid = self.run_xdotool("search", "--name", needle)
+            if wid:
+                wid = wid.split()[0]
+                self.log(f"Dismissing error dialog '{needle}' (window {wid})")
+                self.run_xdotool("windowactivate", "--sync", wid)
+                time.sleep(0.3)
+                self.run_xdotool("key", "Return")
+                dismissed = True
+                time.sleep(0.5)
+                break
+        if not dismissed:
+            self.log("No matching error dialog found; sending Escape as fallback")
+            self.run_xdotool("key", "Escape")
+            time.sleep(0.3)
+
+        # Step 2: refocus the IBKR Gateway window.
+        window_id = self.find_ibgateway_window(timeout=5)
+        if not window_id:
+            self.log("ERROR: IBKR Gateway window not found; cannot resubmit")
+            return 1
+        self.run_xdotool("windowactivate", "--sync", window_id)
+        time.sleep(0.3)
+
+        # Step 3: jump to password field and resubmit. IB Gateway preserves
+        # the password contents across the failure so we don't retype.
+        self.run_xdotool("key", "Tab")
+        time.sleep(0.3)
+        self.run_xdotool("key", "Return")
+        self.log("✓ Resubmitted login")
+        return 0
+
     def automate(self) -> int:
         """Main automation function."""
         self.config.print_config()
