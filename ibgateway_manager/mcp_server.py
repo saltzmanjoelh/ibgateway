@@ -3,8 +3,9 @@ MCP server exposing IB Gateway features.
 
 Streamable HTTP transport, bound to 127.0.0.1 by default. The trust boundary
 is the SSM tunnel (or the local Docker network); there is no public network
-path. An optional bearer token (env var ``MCP_AUTH_TOKEN``) can be enforced
-in addition.
+path. (A bearer-token gate used to live here but the official MCP SDK's
+FastMCP doesn't accept ``custom_middleware``; if reintroducing auth, build a
+Starlette app from ``mcp.streamable_http_app()`` and wrap that.)
 
 Tools:
   - get_screenshot                  Capture a fresh screenshot, return PNG image.
@@ -31,9 +32,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import FastMCP, Image
-from starlette.middleware import Middleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
 
 from .automate_ibgateway import AutomationHandler
 from .config import Config
@@ -80,30 +78,11 @@ def _list_screenshots(screenshot_dir: str) -> List[Dict[str, Any]]:
     ]
 
 
-class _BearerAuthMiddleware(BaseHTTPMiddleware):
-    """Optional bearer-token gate. Enabled only when MCP_AUTH_TOKEN is set."""
-
-    def __init__(self, app, token: str):
-        super().__init__(app)
-        self._token = token
-
-    async def dispatch(self, request, call_next):
-        header = request.headers.get("authorization", "")
-        if header != f"Bearer {self._token}":
-            return JSONResponse({"error": "unauthorized"}, status_code=401)
-        return await call_next(request)
-
-
 def build_server(config: Optional[Config] = None) -> FastMCP:
     cfg = config or Config()
 
     host = os.getenv("MCP_HOST", "127.0.0.1")
     port = int(os.getenv("MCP_PORT", "8090"))
-    token = os.getenv("MCP_AUTH_TOKEN", "").strip()
-
-    middleware: List[Middleware] = []
-    if token:
-        middleware.append(Middleware(_BearerAuthMiddleware, token=token))
 
     mcp = FastMCP(
         name="ibgateway",
@@ -115,7 +94,6 @@ def build_server(config: Optional[Config] = None) -> FastMCP:
         port=port,
         streamable_http_path="/mcp",
         stateless_http=True,
-        custom_middleware=middleware or None,
     )
 
     @mcp.tool()

@@ -410,14 +410,23 @@ class ServiceOrchestrator:
 
             self._wait_for_mcp_server()
             if self.mcp_process and self.mcp_process.poll() is not None:
+                # MCP is part of the gateway contract: if it can't start, the
+                # container is in an unexpected state and we want CI / ECS to
+                # see that rather than silently degrading. Set SKIP_MCP=1 (or
+                # the --no-mcp flag) for an explicit escape hatch.
                 self.log(
-                    f"WARNING: MCP server exited with code {self.mcp_process.returncode}; continuing without it"
+                    f"ERROR: MCP server exited with code {self.mcp_process.returncode}"
                 )
                 if Path("/tmp/mcp-server.log").exists():
                     log_content = Path("/tmp/mcp-server.log").read_text()
                     if log_content:
-                        self.log(f"MCP server log: {log_content[-1000:]}")
+                        self.log(f"MCP server log:\n{log_content[-2000:]}")
+                self.log(
+                    "Aborting startup. To bypass intentionally, set SKIP_MCP=1 "
+                    "or pass --no-mcp."
+                )
                 self.mcp_process = None
+                return 1
 
         # Wait for automation to complete (only if automation was started)
         if not skip_automation:
