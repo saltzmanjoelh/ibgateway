@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .config import Config
+from .notify import notify_slack
 from .screenshot import ScreenshotHandler
 from .services import XvfbManager, VNCManager, NoVNCManager, WindowManager
 from .port_forwarder import PortForwarder
@@ -315,6 +316,9 @@ class ServiceOrchestrator:
         self.log("=== Starting IB Gateway ===")
         env = os.environ.copy()
         env["DISPLAY"] = self.config.display
+        # Heads-up to Slack BEFORE Popen so the user knows an MFA push is
+        # imminent. No-op if SLACK_WEBHOOK_URL is unset; never raises.
+        notify_slack("Cold start: launching IB Gateway Java process. MFA push incoming.")
         try:
             self.ibgateway_process = subprocess.Popen(
                 ["/opt/ibgateway/ibgateway"],

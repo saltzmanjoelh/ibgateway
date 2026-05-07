@@ -34,6 +34,7 @@ from typing import Any, Dict, List, Optional
 from mcp.server.fastmcp import FastMCP, Image
 
 from .automate_ibgateway import AutomationHandler
+from .notify import notify_slack
 from .config import Config
 from .connection_status import check_connection_status
 from .healthcheck import (
@@ -190,6 +191,9 @@ def build_server(config: Optional[Config] = None) -> FastMCP:
         Returns exit_code (0 = success, 1 = couldn't find gateway window) and
         the tail of the automation log for diagnostics.
         """
+        notify_slack(
+            "MCP `retry_login_after_mfa_failure`: resubmitting login. MFA push incoming."
+        )
         handler = AutomationHandler(cfg, verbose=False)
         rc = handler.retry_login_after_mfa_failure()
         log_tail = ""
@@ -240,6 +244,7 @@ def build_server(config: Optional[Config] = None) -> FastMCP:
 
         env = os.environ.copy()
         env["DISPLAY"] = cfg.display
+        notify_slack("MCP `restart_gateway`: launching new IB Gateway. MFA push incoming.")
         new_proc = subprocess.Popen(
             ["/opt/ibgateway/ibgateway"],
             env=env,
