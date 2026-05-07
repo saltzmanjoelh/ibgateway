@@ -199,11 +199,25 @@ class IBGatewayCLI:
         log_path = "/tmp/install-ibgateway.log"
 
         try:
-            # Download installer
+            # Download installer. IBKR's mirror occasionally drops the
+            # connection mid-body (curl exit 56) which used to fail the
+            # whole image build. --retry-all-errors + bounded backoff lets
+            # the build self-heal across those flakes; -fL fails fast on
+            # HTTP errors and follows redirects; --connect-timeout caps
+            # TLS-handshake hangs.
             print(f"Downloading installer from {installer_url}...")
             subprocess.run(
-                ["curl", installer_url, "-o", installer_path],
-                check=True
+                [
+                    "curl", "-fL", "-o", installer_path,
+                    "--retry", "5",
+                    "--retry-delay", "5",
+                    "--retry-all-errors",
+                    "--retry-max-time", "300",
+                    "--connect-timeout", "30",
+                    "--max-time", "600",
+                    installer_url,
+                ],
+                check=True,
             )
 
             # Make executable
