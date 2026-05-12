@@ -16,6 +16,13 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    # The push trigger matches all branches (``'**'``), so a commit to a
+    # feature branch with an open PR fires *both* the push and
+    # pull_request events on this same workflow — two runs per commit
+    # for the same SHA. Skip the pull_request run when the PR is from
+    # this repo (push already built it); keep it for fork PRs, where
+    # the push event fires on the fork instead of here.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     permissions:
       contents: read
       packages: write
