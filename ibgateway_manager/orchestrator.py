@@ -11,11 +11,19 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
+from .api_log_tailer import ApiLogTailer
 from .config import Config
+from .jts_log_config import JtsLogConfig
 from .notify import launch_reason, notify_slack
 from .screenshot import ScreenshotHandler
 from .services import XvfbManager, VNCManager, NoVNCManager, WindowManager
 from .port_forwarder import PortForwarder
+
+
+# Sink file the api-log-tailer streams plaintext gateway API logs into.
+# Added to the orchestrator's tail-to-stdout set so each line lands in
+# docker logs / CloudWatch alongside the orchestrator's own status.
+IBGATEWAY_API_LOG_SINK = "/tmp/ibgateway-api.log"
 
 
 class ServiceOrchestrator:
@@ -38,6 +46,7 @@ class ServiceOrchestrator:
         self.mcp_process: Optional[subprocess.Popen] = None
         self.port_forwarder: Optional[PortForwarder] = None
         self.tail_process: Optional[subprocess.Popen] = None
+        self.api_log_tailer: Optional[ApiLogTailer] = None
 
         # Log files
         self.log_files = [
@@ -46,7 +55,8 @@ class ServiceOrchestrator:
             "/tmp/screenshot-server.log",
             "/tmp/mcp-server.log",
             "/tmp/websockify.log",
-            "/tmp/x11vnc.log"
+            "/tmp/x11vnc.log",
+            IBGATEWAY_API_LOG_SINK,
         ]
 
         # Setup signal handlers
@@ -73,9 +83,10 @@ class ServiceOrchestrator:
                 stderr=sys.stderr
             )
         else:
-            # Only tail automation log in normal mode
+            # In normal mode tail the automation log + the IB Gateway API
+            # log sink so plaintext gateway API messages reach CloudWatch.
             self.tail_process = subprocess.Popen(
-                ["tail", "-f", "/tmp/automate-ibgateway.log"],
+                ["tail", "-F", "/tmp/automate-ibgateway.log", IBGATEWAY_API_LOG_SINK],
                 stdout=sys.stdout,
                 stderr=sys.stderr
             )
@@ -312,6 +323,15 @@ class ServiceOrchestrator:
         self.log(f"USER={os.getenv('USER', 'root')}")
         self.log(f"DISPLAY={self.config.display}")
 
+        # Pre-seed jts.ini with the keys that turn on plaintext API logging
+        # before the Java process reads its config. Idempotent — does
+        # nothing if the keys are already present. Failures are logged
+        # and ignored: missing API logs is degraded service, not fatal.
+        try:
+            JtsLogConfig().apply()
+        except Exception as e:
+            self.log(f"WARNING: failed to patch jts.ini for API logging: {e}")
+
         # Start IB Gateway
         self.log("=== Starting IB Gateway ===")
         env = os.environ.copy()
@@ -330,6 +350,15 @@ class ServiceOrchestrator:
                 env=env
             )
             self.log(f"IB Gateway started (PID: {self.ibgateway_process.pid})")
+
+            # Start the api-log tailer. It polls ``~/Jts`` every 30s and
+            # spawns ``tail -F`` for each new plaintext ``api.*.log``
+            # file as it appears (the per-account subdir name is opaque
+            # and the file rotates daily). Output streams into
+            # IBGATEWAY_API_LOG_SINK, which the orchestrator already
+            # tails to stdout — so each line lands in CloudWatch.
+            self.api_log_tailer = ApiLogTailer(sink_path=IBGATEWAY_API_LOG_SINK)
+            self.api_log_tailer.start()
 
             # Check if process crashed immediately
             time.sleep(2)  # Give it a moment to start
@@ -521,6 +550,12 @@ class ServiceOrchestrator:
         if self.tail_process:
             try:
                 self.tail_process.terminate()
+            except Exception:
+                pass
+
+        if self.api_log_tailer:
+            try:
+                self.api_log_tailer.stop()
             except Exception:
                 pass
 
