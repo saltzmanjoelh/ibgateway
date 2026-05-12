@@ -8,7 +8,7 @@ ENV USER=root
 ENV RESOLUTION=1024x768
 
 # 1. Install noVNC and Websockify
-RUN apt-get update && apt-get install -y x11vnc git python3 python3-pip && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y x11vnc git python3 python3-pip tcpdump && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /opt/novnc
 RUN git clone https://github.com/novnc/noVNC.git /opt/novnc
 RUN git clone https://github.com/novnc/websockify /opt/novnc/utils/websockify

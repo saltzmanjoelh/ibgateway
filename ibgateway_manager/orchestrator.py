@@ -11,11 +11,22 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
+from .api_log_tailer import ApiLogTailer
+from .api_traffic_capture import (
+    DEFAULT_SINK_PATH as IBGATEWAY_API_TRAFFIC_SINK,
+    ApiTrafficCapture,
+)
 from .config import Config
 from .notify import launch_reason, notify_slack
 from .screenshot import ScreenshotHandler
 from .services import XvfbManager, VNCManager, NoVNCManager, WindowManager
 from .port_forwarder import PortForwarder
+
+
+# Sink for plaintext launcher.log content. The api-log-tailer discovers
+# ``~/Jts/launcher.log`` and spawns ``tail -F`` into this sink; the
+# orchestrator's existing tail process streams the sink to stdout.
+IBGATEWAY_LAUNCHER_LOG_SINK = "/tmp/ibgateway-launcher.log"
 
 
 class ServiceOrchestrator:
@@ -38,6 +49,8 @@ class ServiceOrchestrator:
         self.mcp_process: Optional[subprocess.Popen] = None
         self.port_forwarder: Optional[PortForwarder] = None
         self.tail_process: Optional[subprocess.Popen] = None
+        self.api_log_tailer: Optional[ApiLogTailer] = None
+        self.api_traffic_capture: Optional[ApiTrafficCapture] = None
 
         # Log files
         self.log_files = [
@@ -46,7 +59,9 @@ class ServiceOrchestrator:
             "/tmp/screenshot-server.log",
             "/tmp/mcp-server.log",
             "/tmp/websockify.log",
-            "/tmp/x11vnc.log"
+            "/tmp/x11vnc.log",
+            IBGATEWAY_LAUNCHER_LOG_SINK,
+            IBGATEWAY_API_TRAFFIC_SINK,
         ]
 
         # Setup signal handlers
@@ -56,6 +71,41 @@ class ServiceOrchestrator:
     def log(self, message: str):
         """Print log message."""
         print(f"[ORCHESTRATOR] {message}", flush=True)
+
+    def _log_capture_enabled(self) -> bool:
+        """Decide whether to start the gateway-log streaming pipelines.
+
+        Both pipelines surface gateway-internal state to ``docker logs``
+        and CloudWatch:
+
+          * ``ApiTrafficCapture`` — tcpdump of IBKR wire-protocol bytes
+            on port 4002. Reveals every reqHistoricalData / order / etc.
+          * ``ApiLogTailer`` — tails ``launcher.log`` which carries auth
+            flow, JVM events, account-refresh dumps, and saved-settings
+            paths.
+
+        In **live** trading mode both pipelines would expose real
+        account balances (e.g. ``NetLiquidation 254037.87`` from
+        CCPDispatcher), real order IDs, and SMS-MFA token suffixes to
+        CloudWatch. That's a leak surface we don't want enabled by
+        default — operators who need it in production should opt in
+        consciously.
+
+        In **paper** trading mode the simulated balances and synthetic
+        order IDs are fine to log; this is the default development /
+        CI mode and visibility is the whole point.
+
+        Override:
+          ``IBGATEWAY_LOG_CAPTURE=true``        — force enable
+          ``IBGATEWAY_LOG_CAPTURE=false``       — force disable
+          ``IBGATEWAY_LOG_CAPTURE=paper-only``  — default; on for paper, off for live
+        """
+        setting = os.getenv("IBGATEWAY_LOG_CAPTURE", "paper-only").strip().lower()
+        if setting == "true":
+            return True
+        if setting == "false":
+            return False
+        return self.config.trading_mode == "PAPER"
 
     def _create_log_files(self):
         """Create log files."""
@@ -73,9 +123,15 @@ class ServiceOrchestrator:
                 stderr=sys.stderr
             )
         else:
-            # Only tail automation log in normal mode
+            # In normal mode tail the automation log + the IB Gateway API
+            # log sink so plaintext gateway API messages reach CloudWatch.
             self.tail_process = subprocess.Popen(
-                ["tail", "-f", "/tmp/automate-ibgateway.log"],
+                [
+                    "tail", "-F",
+                    "/tmp/automate-ibgateway.log",
+                    IBGATEWAY_LAUNCHER_LOG_SINK,
+                    IBGATEWAY_API_TRAFFIC_SINK,
+                ],
                 stdout=sys.stdout,
                 stderr=sys.stderr
             )
@@ -312,6 +368,46 @@ class ServiceOrchestrator:
         self.log(f"USER={os.getenv('USER', 'root')}")
         self.log(f"DISPLAY={self.config.display}")
 
+        # Gate the two log-capture pipelines on trading mode. Live mode
+        # would leak real balances + order IDs to CloudWatch; see
+        # _log_capture_enabled() for the env-var override.
+        log_capture_on = self._log_capture_enabled()
+        if not log_capture_on:
+            self.log(
+                f"log-capture pipelines DISABLED "
+                f"(trading_mode={self.config.trading_mode}, "
+                f"IBGATEWAY_LOG_CAPTURE={os.getenv('IBGATEWAY_LOG_CAPTURE', 'paper-only')}); "
+                f"set IBGATEWAY_LOG_CAPTURE=true to force-enable"
+            )
+
+        # Start tcpdump-based capture of IBKR wire-protocol traffic on
+        # the API ports. This is the **only** way to capture per-message
+        # request/response detail with IB Gateway 10.45 — the GUI's
+        # ``Show API messages`` tab shows it but the gateway never
+        # writes it to disk in any plaintext file (the
+        # ``Create API message log file`` toggle in the encrypted
+        # ibg.xml settings file isn't reachable from outside the GUI,
+        # and verified empirically that neither ibgateway.*.ibgzenc
+        # nor GUI ``Export Logs`` includes the per-message records).
+        # Failures here (missing tcpdump, missing capabilities) are
+        # logged and ignored — gateway boot continues with degraded
+        # logging visibility, not aborted.
+        if log_capture_on:
+            try:
+                self.api_traffic_capture = ApiTrafficCapture()
+                if self.api_traffic_capture.start():
+                    self.log(
+                        f"api-traffic-capture: tcpdump pid={self.api_traffic_capture.pid} "
+                        f"streaming -> stdout"
+                    )
+                else:
+                    self.log(
+                        "WARNING: api-traffic-capture disabled (tcpdump unavailable "
+                        "or insufficient capabilities)"
+                    )
+            except Exception as e:
+                self.log(f"WARNING: failed to start api-traffic-capture: {e}")
+
         # Start IB Gateway
         self.log("=== Starting IB Gateway ===")
         env = os.environ.copy()
@@ -330,6 +426,23 @@ class ServiceOrchestrator:
                 env=env
             )
             self.log(f"IB Gateway started (PID: {self.ibgateway_process.pid})")
+
+            # Start the api-log tailer. It polls ``~/Jts`` every 30s and
+            # spawns ``tail -F`` for each new plaintext log file as it
+            # appears — both ``launcher.log`` at the top level and the
+            # per-account ``api.YYYYMMDD.log`` once IB Gateway logs in.
+            # Output streams into IBGATEWAY_LAUNCHER_LOG_SINK, which the
+            # orchestrator already tails to stdout, so each line lands
+            # in CloudWatch. Gated on trading mode by
+            # _log_capture_enabled() — same gate as ApiTrafficCapture.
+            if log_capture_on:
+                def _on_tail_started(path):
+                    self.log(f"api-log-tailer: streaming {path} -> stdout")
+                self.api_log_tailer = ApiLogTailer(
+                    sink_path=IBGATEWAY_LAUNCHER_LOG_SINK,
+                    on_tail_started=_on_tail_started,
+                )
+                self.api_log_tailer.start()
 
             # Check if process crashed immediately
             time.sleep(2)  # Give it a moment to start
@@ -521,6 +634,18 @@ class ServiceOrchestrator:
         if self.tail_process:
             try:
                 self.tail_process.terminate()
+            except Exception:
+                pass
+
+        if self.api_log_tailer:
+            try:
+                self.api_log_tailer.stop()
+            except Exception:
+                pass
+
+        if self.api_traffic_capture:
+            try:
+                self.api_traffic_capture.stop()
             except Exception:
                 pass
 
