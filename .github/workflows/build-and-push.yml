@@ -8,6 +8,22 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      enable_tcpdump:
+        description: >-
+          Install tcpdump in the image. Enables the ApiTrafficCapture
+          wire-protocol logging pipeline at runtime. Default 'false' —
+          push-triggered builds are always non-diagnostic. Setting this
+          to 'true' produces an image marked with the
+          ``ibgateway.diag.tcpdump=true`` OCI label, which the
+          ibkr_core deploy workflow refuses to roll to production. Use
+          only for ad-hoc diagnostic builds deployed manually via AWS CLI.
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 env:
   REGISTRY: ghcr.io
@@ -67,6 +83,13 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # ENABLE_TCPDUMP is sourced from the workflow_dispatch input
+          # when present, otherwise hard-coded 'false'. Push and PR
+          # builds always produce a production-trusted image without
+          # tcpdump. Diagnostic builds must be triggered manually via
+          # the Actions UI (or `gh workflow run`).
+          build-args: |
+            ENABLE_TCPDUMP=${{ github.event_name == 'workflow_dispatch' && inputs.enable_tcpdump || 'false' }}
           cache-from: type=gha
           cache-to: type=gha,mode=min
 

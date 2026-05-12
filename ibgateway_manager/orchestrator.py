@@ -416,13 +416,14 @@ class ServiceOrchestrator:
         self.log(f"USER={os.getenv('USER', 'root')}")
         self.log(f"DISPLAY={self.config.display}")
 
-        # Gate the two log-capture pipelines on trading mode. Live mode
-        # would leak real balances + order IDs to CloudWatch; see
-        # _log_capture_enabled() for the env-var override.
+        # Gate the launcher.log tailer on trading mode. Live mode would
+        # leak real balances + order IDs from CCPDispatcher's account
+        # refresh dumps to CloudWatch; see _log_capture_enabled() for
+        # the env-var override.
         log_capture_on = self._log_capture_enabled()
         if not log_capture_on:
             self.log(
-                f"log-capture pipelines DISABLED "
+                f"launcher-log tailer DISABLED "
                 f"(trading_mode={self.config.trading_mode}, "
                 f"IBGATEWAY_LOG_CAPTURE={os.getenv('IBGATEWAY_LOG_CAPTURE', 'paper-only')}); "
                 f"set IBGATEWAY_LOG_CAPTURE=true to force-enable"
@@ -432,29 +433,39 @@ class ServiceOrchestrator:
         # the API ports. This is the **only** way to capture per-message
         # request/response detail with IB Gateway 10.45 — the GUI's
         # ``Show API messages`` tab shows it but the gateway never
-        # writes it to disk in any plaintext file (the
-        # ``Create API message log file`` toggle in the encrypted
-        # ibg.xml settings file isn't reachable from outside the GUI,
-        # and verified empirically that neither ibgateway.*.ibgzenc
-        # nor GUI ``Export Logs`` includes the per-message records).
-        # Failures here (missing tcpdump, missing capabilities) are
-        # logged and ignored — gateway boot continues with degraded
-        # logging visibility, not aborted.
-        if log_capture_on:
-            try:
-                self.api_traffic_capture = ApiTrafficCapture()
-                if self.api_traffic_capture.start():
-                    self.log(
-                        f"api-traffic-capture: tcpdump pid={self.api_traffic_capture.pid} "
-                        f"streaming -> stdout"
-                    )
-                else:
-                    self.log(
-                        "WARNING: api-traffic-capture disabled (tcpdump unavailable "
-                        "or insufficient capabilities)"
-                    )
-            except Exception as e:
-                self.log(f"WARNING: failed to start api-traffic-capture: {e}")
+        # writes it to disk in any plaintext file (verified empirically:
+        # the ``Create API message log file`` toggle lives in the
+        # encrypted ibg.xml settings unreachable from outside the GUI,
+        # and neither ibgateway.*.ibgzenc nor the GUI ``Export Logs``
+        # action includes the per-message records).
+        #
+        # We do NOT gate this call — the binary's presence in the image
+        # IS the gate. Default builds (``ENABLE_TCPDUMP=false``) don't
+        # install tcpdump, so ``start()`` finds nothing on PATH, returns
+        # False, and logs one WARNING line without disturbing boot.
+        # Diagnostic builds (``--build-arg ENABLE_TCPDUMP=true``) do
+        # install it, and the consumer-side deploy guard refuses to
+        # roll those images to production via CI — operators have to
+        # use the manual AWS CLI deploy path with explicit
+        # authorization. Trading-mode is not consulted: if you took
+        # the deliberate steps to build a diagnostic image AND deploy
+        # it manually, the capture turning on is the expected outcome.
+        try:
+            self.api_traffic_capture = ApiTrafficCapture()
+            if self.api_traffic_capture.start():
+                self.log(
+                    f"api-traffic-capture: tcpdump pid={self.api_traffic_capture.pid} "
+                    f"streaming -> stdout (diagnostic image)"
+                )
+            else:
+                self.log(
+                    "api-traffic-capture: disabled — tcpdump not installed "
+                    "(production-default image). Build with "
+                    "--build-arg ENABLE_TCPDUMP=true and deploy manually "
+                    "to enable wire-protocol capture."
+                )
+        except Exception as e:
+            self.log(f"WARNING: failed to start api-traffic-capture: {e}")
 
         # Start IB Gateway
         self.log("=== Starting IB Gateway ===")
@@ -482,7 +493,11 @@ class ServiceOrchestrator:
             # Output streams into IBGATEWAY_LAUNCHER_LOG_SINK, which the
             # orchestrator already tails to stdout, so each line lands
             # in CloudWatch. Gated on trading mode by
-            # _log_capture_enabled() — same gate as ApiTrafficCapture.
+            # _log_capture_enabled() — independent of the
+            # ApiTrafficCapture above (which is gated on the
+            # ``ENABLE_TCPDUMP`` build arg). Launcher.log doesn't need
+            # extra kernel privileges so the gating need only worry
+            # about leaking real balances in live mode.
             if log_capture_on:
                 def _on_tail_started(path):
                     self.log(f"api-log-tailer: streaming {path} -> stdout")
