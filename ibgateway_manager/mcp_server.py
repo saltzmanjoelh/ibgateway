@@ -16,6 +16,7 @@ Tools:
   - automate_login                  Run the xdotool-driven login/MFA flow.
   - retry_login_after_mfa_failure   Recovery for the post-MFA-failure dialog.
   - restart_gateway                 Kill and relaunch the IB Gateway process.
+  - test_historical_data            Smoke-test IB API historical bars vs local Gateway.
   - get_gateway_logs                Tail one of the orchestrator log files.
 """
 
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import base64
 import glob
+import io
 import os
 import signal
 import subprocess
@@ -52,6 +54,7 @@ _LOG_FILES = {
     "x11vnc": "/tmp/x11vnc.log",
     "websockify": "/tmp/websockify.log",
     "mcp-server": "/tmp/mcp-server.log",
+    "historical-data": "/tmp/test-historical-data.log",
 }
 
 
@@ -255,11 +258,46 @@ def build_server(config: Optional[Config] = None) -> FastMCP:
         return {"killed_pids": killed_pids, "new_pid": new_proc.pid}
 
     @mcp.tool()
+    def test_historical_data() -> Dict[str, Any]:
+        """Run the same IB API historical bars smoke as ``IBGATEWAY_ACTION=test_historical_data``.
+
+        Issues ``reqHistoricalData`` against ``127.0.0.1:4002`` (paper API in-container).
+        Override with ``IB_HIST_HOST``, ``IB_HIST_PORT``, ``IB_HIST_CLIENT_ID`` if needed.
+
+        Returns stdout/stderr capture, exit-style code field (0 = bars completed), and
+        mirrors output to ``/tmp/test-historical-data.log`` for ``get_gateway_logs``.
+        """
+        from contextlib import redirect_stderr, redirect_stdout
+
+        from . import historical_simple as _historical_simple
+
+        log_path = "/tmp/test-historical-data.log"
+        stdout_buf = io.StringIO()
+        stderr_buf = io.StringIO()
+        with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+            rc = _historical_simple.test_historical_data()
+        stdout_text = stdout_buf.getvalue()
+        stderr_text = stderr_buf.getvalue()
+        chunk = f"=== exit_code={rc} ===\n--- stdout ---\n{stdout_text}--- stderr ---\n{stderr_text}"
+        try:
+            Path(log_path).write_text(chunk, encoding="utf-8", errors="replace")
+        except OSError:
+            pass
+
+        return {
+            "exit_code": rc,
+            "ok": rc == 0,
+            "stdout_tail": stdout_text[-8000:] if stdout_text else "",
+            "stderr_tail": stderr_text[-4000:] if stderr_text else "",
+            "log_path": log_path,
+        }
+
+    @mcp.tool()
     def get_gateway_logs(name: str = "automate", lines: int = 200) -> Dict[str, Any]:
         """Return the last ``lines`` lines of one of the orchestrator log files.
 
         Available names: automate, screenshot-server, port-forward, x11vnc,
-        websockify, mcp-server.
+        websockify, mcp-server, historical-data.
         """
         if name not in _LOG_FILES:
             raise ValueError(

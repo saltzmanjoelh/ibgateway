@@ -1,5 +1,16 @@
 """
 Service orchestrator for IB Gateway - coordinates all services.
+
+Startup hooks (optional), via environment:
+
+  ``IBGATEWAY_ACTION`` — runs once after automation, MCP, screenshot service, and socat API
+  forwarding are up (see ``_maybe_run_startup_action``). Supported values::
+
+    test_historical_data — run ``historical_simple.test_historical_data()`` (IB API bars probe); combines
+                           captured stdout/stderr into ``/tmp/test-historical-data.log``.
+                           Non-zero exit from the orchestrator if the probe fails.
+
+  Hyphens are accepted (`test-historical-data` → ``test_historical_data``).
 """
 
 import os
@@ -8,6 +19,8 @@ import socket
 import subprocess
 import sys
 import time
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
 from typing import List, Optional
 
@@ -62,6 +75,7 @@ class ServiceOrchestrator:
             "/tmp/x11vnc.log",
             IBGATEWAY_LAUNCHER_LOG_SINK,
             IBGATEWAY_API_TRAFFIC_SINK,
+            "/tmp/test-historical-data.log",
         ]
 
         # Setup signal handlers
@@ -264,6 +278,40 @@ class ServiceOrchestrator:
 
         self.log("ERROR: Port forwarding failed to start within timeout")
         return False
+
+    def _run_test_historical_data_action(self) -> int:
+        """Run IB API historical smoke test; writes combined streams to ``/tmp/test-historical-data.log``."""
+        log_path = "/tmp/test-historical-data.log"
+        self.log(f"=== Running IBGATEWAY_ACTION=test_historical_data (log: {log_path}) ===")
+        from .historical_simple import test_historical_data
+
+        stdout_buf = StringIO()
+        stderr_buf = StringIO()
+        with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+            rc = test_historical_data()
+
+        out_t = stdout_buf.getvalue()
+        err_t = stderr_buf.getvalue()
+        chunk = f"=== exit_code={rc} ===\n--- stdout ---\n{out_t}--- stderr ---\n{err_t}"
+        try:
+            Path(log_path).write_text(chunk, encoding="utf-8", errors="replace")
+        except OSError as exc:
+            self.log(f"WARNING: could not write {log_path}: {exc}")
+
+        self.log(f"test_historical_data finished rc={rc}")
+        if rc != 0:
+            self.log(chunk[-3500:])
+        return rc
+
+    def _maybe_run_startup_action(self) -> int:
+        raw = os.getenv("IBGATEWAY_ACTION", "").strip()
+        if not raw:
+            return 0
+        action = raw.lower().replace("-", "_")
+        if action == "test_historical_data":
+            return self._run_test_historical_data_action()
+        self.log(f"WARNING: unknown IBGATEWAY_ACTION={raw!r} (ignored)")
+        return 0
 
     def _verify_all_services(self):
         """Verify all services are ready."""
@@ -570,6 +618,10 @@ class ServiceOrchestrator:
 
         # Verify all services
         self._verify_all_services()
+
+        startup_rc = self._maybe_run_startup_action()
+        if startup_rc != 0:
+            return startup_rc
 
         self.log("")
         self.log("=== All services ready ===")

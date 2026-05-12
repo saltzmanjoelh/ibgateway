@@ -68,6 +68,14 @@ class IBGatewayCLI:
         test_parser.add_argument("test_image", help="Path to test/reference screenshot")
         test_parser.add_argument("--threshold", type=float, default=0.01, help="Similarity threshold")
 
+        subparsers.add_parser(
+            "test-historical-data",
+            help=(
+                "IB API historical smoke (reqHistoricalData to local Gateway; "
+                "same as MCP test_historical_data / IBGATEWAY_ACTION=test_historical_data)"
+            ),
+        )
+
         # start-services subcommand
         start_parser = subparsers.add_parser("start-services", help="Start all IB Gateway services (orchestrator)")
         start_parser.add_argument("--username", help="IB Gateway username (overrides env var)")
@@ -169,6 +177,11 @@ class IBGatewayCLI:
                 parsed_args.test_image,
                 parsed_args.threshold
             )
+
+        elif parsed_args.command == "test-historical-data":
+            from .historical_simple import test_historical_data
+
+            return test_historical_data()
 
         elif parsed_args.command == "install-ibgateway":
             use_latest = getattr(parsed_args, "latest", False)
