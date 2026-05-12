@@ -143,13 +143,66 @@ class TestApiLogTailer(unittest.TestCase):
         account.mkdir()
         (account / "ibgateway.20260512.ibgzenc").write_text("encrypted blob\n")
         (account / "language.jar").write_text("jar content\n")
-        t = self._new_tailer()
+        # Restrict globs so we don't pick up launcher.log default.
+        t = self._new_tailer(log_globs=("api.*.log",))
         t.start()
         time.sleep(0.3)
         # No api.*.log files in the tree → no tails spawned.
         self.assertEqual(len(t._tail_procs), 0)
         self.assertNotIn("encrypted blob", self.sink.read_text())
         self.assertNotIn("jar content", self.sink.read_text())
+
+    # ---- top-level discovery (launcher.log) ----------------------------
+
+    def test_discovers_launcher_log_at_top_level(self) -> None:
+        """launcher.log lives at /root/Jts/launcher.log, not under an
+        account subdir. The scan should pick it up."""
+        (self.jts / "launcher.log").write_text("gateway booting\n")
+        self._new_tailer().start()
+        self.assertTrue(
+            _wait_for(lambda: "gateway booting" in self.sink.read_text())
+        )
+
+    def test_discovers_launcher_log_and_api_log_in_same_scan(self) -> None:
+        """Both files appear together in a single discovery pass — sink
+        ends up with content from both streams."""
+        (self.jts / "launcher.log").write_text("LAUNCHER LINE\n")
+        account = self.jts / "acct1"
+        account.mkdir()
+        (account / "api.20260512.log").write_text("API LINE\n")
+        t = self._new_tailer()
+        t.start()
+        self.assertTrue(_wait_for(
+            lambda: "LAUNCHER LINE" in self.sink.read_text()
+            and "API LINE" in self.sink.read_text()
+        ))
+        self.assertEqual(len(t._tail_procs), 2)
+
+    # ---- on_tail_started callback --------------------------------------
+
+    def test_on_tail_started_invoked_per_discovered_file(self) -> None:
+        (self.jts / "launcher.log").write_text("a\n")
+        account = self.jts / "acct1"
+        account.mkdir()
+        (account / "api.20260512.log").write_text("b\n")
+
+        invoked: list = []
+        self._new_tailer(on_tail_started=invoked.append).start()
+
+        self.assertTrue(_wait_for(lambda: len(invoked) == 2))
+        names = sorted(p.name for p in invoked)
+        self.assertEqual(names, ["api.20260512.log", "launcher.log"])
+
+    def test_on_tail_started_callback_exception_is_swallowed(self) -> None:
+        (self.jts / "launcher.log").write_text("hello\n")
+
+        def _boom(_path):
+            raise RuntimeError("callback exploded")
+
+        t = self._new_tailer(on_tail_started=_boom)
+        t.start()
+        # File still gets tailed despite callback raising.
+        self.assertTrue(_wait_for(lambda: "hello" in self.sink.read_text()))
 
     def test_handles_missing_jts_dir_at_start(self) -> None:
         """First-boot: orchestrator starts the tailer before IB Gateway

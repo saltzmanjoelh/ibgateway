@@ -1,27 +1,26 @@
-"""Background watcher that streams IB Gateway's plaintext ``api.*.log``
-files into a single sink file the orchestrator already tails to stdout.
+"""Background watcher that streams IB Gateway's plaintext logs into a
+single sink file the orchestrator already tails to stdout.
 
-IB Gateway writes its plaintext API log as
-``~/Jts/<account-encoded-id>/api.YYYYMMDD.log`` once the
-``WriteAPIMessages``/``LogFile`` jts.ini keys are on (see
-:mod:`ibgateway_manager.jts_log_config`). Two complications make this
-non-trivial to surface in container stdout:
+IB Gateway writes two plaintext log streams worth capturing:
 
-  1. The per-account subdirectory name is opaque (an obfuscated string)
-     and not stable across accounts — we can't hardcode it.
-  2. The file name rotates daily, so a long-running container picks up
-     a fresh ``api.YYYYMMDD.log`` after every UTC midnight.
+  * ``~/Jts/launcher.log`` — system/JVM-level events (restart markers,
+    config init, FX-thread errors). Lives at the top level of the Jts
+    dir, always present, single file (no rotation).
+  * ``~/Jts/<account-encoded-id>/api.YYYYMMDD.log`` — API protocol
+    traffic. Only appears once ``WriteAPIMessages``/``LogFile`` are on
+    in jts.ini (see :mod:`ibgateway_manager.jts_log_config`) AND the
+    user has logged in. The per-account subdir name is opaque and the
+    filename rotates daily.
 
-We deal with both by running a tiny poller thread that scans the Jts
-tree every 30 seconds, matches ``api.*.log`` (and the encrypted
-``ibgateway.*.txt`` fallbacks if anyone ever switches), and spawns one
-``tail -F`` per new file appending to a single sink file. The
+We deal with the variability by running a tiny poller thread that
+scans the Jts tree every 30 seconds, matches both shapes, and spawns
+one ``tail -F`` per discovered file appending to a single sink. The
 orchestrator already includes the sink in its tail-to-stdout set, so
 each line lands in ``docker logs`` / CloudWatch.
 
-This is intentionally simple — ``tail -F`` handles file rotation,
-mid-write reads, and the case where the file disappears and reappears.
-We never read the file directly from Python.
+Intentionally simple — ``tail -F`` handles file rotation, mid-write
+reads, and the case where the file disappears and reappears. We never
+read the file contents directly from Python.
 """
 
 from __future__ import annotations
@@ -30,7 +29,7 @@ import logging
 import subprocess
 import threading
 from pathlib import Path
-from typing import Iterable, List, Optional, Set
+from typing import Callable, Iterable, List, Optional, Set
 
 _logger = logging.getLogger(__name__)
 
@@ -43,12 +42,14 @@ class ApiLogTailer:
         jts_dir: str = "/root/Jts",
         sink_path: str = "/tmp/ibgateway-api.log",
         poll_interval_seconds: float = 30.0,
-        log_globs: Iterable[str] = ("api.*.log",),
+        log_globs: Iterable[str] = ("api.*.log", "launcher.log"),
+        on_tail_started: Optional["Callable[[Path], None]"] = None,
     ) -> None:
         self.jts_dir = Path(jts_dir)
         self.sink_path = Path(sink_path)
         self.poll_interval_seconds = float(poll_interval_seconds)
         self.log_globs = tuple(log_globs)
+        self.on_tail_started = on_tail_started
         self._tailed_files: Set[Path] = set()
         self._tail_procs: List[subprocess.Popen] = []
         self._thread: Optional[threading.Thread] = None
@@ -110,11 +111,15 @@ class ApiLogTailer:
         if not self.jts_dir.is_dir():
             return []
         discovered: List[Path] = []
-        for account_dir in sorted(self.jts_dir.iterdir()):
-            if not account_dir.is_dir():
-                continue
+        # Scan top-level first (catches launcher.log) then each account subdir
+        # (catches api.YYYYMMDD.log). Glob each directory against all patterns
+        # — patterns that don't match at a given level just return no files.
+        scan_dirs = [self.jts_dir] + [
+            d for d in sorted(self.jts_dir.iterdir()) if d.is_dir()
+        ]
+        for scan_dir in scan_dirs:
             for pattern in self.log_globs:
-                for log_file in sorted(account_dir.glob(pattern)):
+                for log_file in sorted(scan_dir.glob(pattern)):
                     if log_file in self._tailed_files:
                         continue
                     discovered.append(log_file)
@@ -139,3 +144,8 @@ class ApiLogTailer:
         self._tail_procs.append(proc)
         self._tailed_files.add(log_file)
         _logger.info("api-log-tailer: now tailing %s", log_file)
+        if self.on_tail_started is not None:
+            try:
+                self.on_tail_started(log_file)
+            except Exception:
+                _logger.exception("on_tail_started callback raised")

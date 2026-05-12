@@ -329,6 +329,7 @@ class ServiceOrchestrator:
         # and ignored: missing API logs is degraded service, not fatal.
         try:
             JtsLogConfig().apply()
+            self.log("jts.ini patched for plaintext API logging")
         except Exception as e:
             self.log(f"WARNING: failed to patch jts.ini for API logging: {e}")
 
@@ -352,12 +353,20 @@ class ServiceOrchestrator:
             self.log(f"IB Gateway started (PID: {self.ibgateway_process.pid})")
 
             # Start the api-log tailer. It polls ``~/Jts`` every 30s and
-            # spawns ``tail -F`` for each new plaintext ``api.*.log``
-            # file as it appears (the per-account subdir name is opaque
-            # and the file rotates daily). Output streams into
-            # IBGATEWAY_API_LOG_SINK, which the orchestrator already
-            # tails to stdout — so each line lands in CloudWatch.
-            self.api_log_tailer = ApiLogTailer(sink_path=IBGATEWAY_API_LOG_SINK)
+            # spawns ``tail -F`` for each new plaintext log file as it
+            # appears — both ``launcher.log`` at the top level and the
+            # per-account ``api.YYYYMMDD.log`` once IB Gateway logs in.
+            # Output streams into IBGATEWAY_API_LOG_SINK, which the
+            # orchestrator already tails to stdout, so each line lands
+            # in CloudWatch. The callback prints a visible orchestrator
+            # line per discovered file so operators can confirm wiring
+            # from container logs alone.
+            def _on_tail_started(path):
+                self.log(f"api-log-tailer: streaming {path} -> stdout")
+            self.api_log_tailer = ApiLogTailer(
+                sink_path=IBGATEWAY_API_LOG_SINK,
+                on_tail_started=_on_tail_started,
+            )
             self.api_log_tailer.start()
 
             # Check if process crashed immediately
