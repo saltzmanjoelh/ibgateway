@@ -72,6 +72,41 @@ class ServiceOrchestrator:
         """Print log message."""
         print(f"[ORCHESTRATOR] {message}", flush=True)
 
+    def _log_capture_enabled(self) -> bool:
+        """Decide whether to start the gateway-log streaming pipelines.
+
+        Both pipelines surface gateway-internal state to ``docker logs``
+        and CloudWatch:
+
+          * ``ApiTrafficCapture`` — tcpdump of IBKR wire-protocol bytes
+            on port 4002. Reveals every reqHistoricalData / order / etc.
+          * ``ApiLogTailer`` — tails ``launcher.log`` which carries auth
+            flow, JVM events, account-refresh dumps, and saved-settings
+            paths.
+
+        In **live** trading mode both pipelines would expose real
+        account balances (e.g. ``NetLiquidation 254037.87`` from
+        CCPDispatcher), real order IDs, and SMS-MFA token suffixes to
+        CloudWatch. That's a leak surface we don't want enabled by
+        default — operators who need it in production should opt in
+        consciously.
+
+        In **paper** trading mode the simulated balances and synthetic
+        order IDs are fine to log; this is the default development /
+        CI mode and visibility is the whole point.
+
+        Override:
+          ``IBGATEWAY_LOG_CAPTURE=true``        — force enable
+          ``IBGATEWAY_LOG_CAPTURE=false``       — force disable
+          ``IBGATEWAY_LOG_CAPTURE=paper-only``  — default; on for paper, off for live
+        """
+        setting = os.getenv("IBGATEWAY_LOG_CAPTURE", "paper-only").strip().lower()
+        if setting == "true":
+            return True
+        if setting == "false":
+            return False
+        return self.config.trading_mode == "PAPER"
+
     def _create_log_files(self):
         """Create log files."""
         self.log("=== Create and stream logs ===")
@@ -333,6 +368,18 @@ class ServiceOrchestrator:
         self.log(f"USER={os.getenv('USER', 'root')}")
         self.log(f"DISPLAY={self.config.display}")
 
+        # Gate the two log-capture pipelines on trading mode. Live mode
+        # would leak real balances + order IDs to CloudWatch; see
+        # _log_capture_enabled() for the env-var override.
+        log_capture_on = self._log_capture_enabled()
+        if not log_capture_on:
+            self.log(
+                f"log-capture pipelines DISABLED "
+                f"(trading_mode={self.config.trading_mode}, "
+                f"IBGATEWAY_LOG_CAPTURE={os.getenv('IBGATEWAY_LOG_CAPTURE', 'paper-only')}); "
+                f"set IBGATEWAY_LOG_CAPTURE=true to force-enable"
+            )
+
         # Start tcpdump-based capture of IBKR wire-protocol traffic on
         # the API ports. This is the **only** way to capture per-message
         # request/response detail with IB Gateway 10.45 — the GUI's
@@ -345,20 +392,21 @@ class ServiceOrchestrator:
         # Failures here (missing tcpdump, missing capabilities) are
         # logged and ignored — gateway boot continues with degraded
         # logging visibility, not aborted.
-        try:
-            self.api_traffic_capture = ApiTrafficCapture()
-            if self.api_traffic_capture.start():
-                self.log(
-                    f"api-traffic-capture: tcpdump pid={self.api_traffic_capture.pid} "
-                    f"streaming -> stdout"
-                )
-            else:
-                self.log(
-                    "WARNING: api-traffic-capture disabled (tcpdump unavailable "
-                    "or insufficient capabilities)"
-                )
-        except Exception as e:
-            self.log(f"WARNING: failed to start api-traffic-capture: {e}")
+        if log_capture_on:
+            try:
+                self.api_traffic_capture = ApiTrafficCapture()
+                if self.api_traffic_capture.start():
+                    self.log(
+                        f"api-traffic-capture: tcpdump pid={self.api_traffic_capture.pid} "
+                        f"streaming -> stdout"
+                    )
+                else:
+                    self.log(
+                        "WARNING: api-traffic-capture disabled (tcpdump unavailable "
+                        "or insufficient capabilities)"
+                    )
+            except Exception as e:
+                self.log(f"WARNING: failed to start api-traffic-capture: {e}")
 
         # Start IB Gateway
         self.log("=== Starting IB Gateway ===")
@@ -385,16 +433,16 @@ class ServiceOrchestrator:
             # per-account ``api.YYYYMMDD.log`` once IB Gateway logs in.
             # Output streams into IBGATEWAY_LAUNCHER_LOG_SINK, which the
             # orchestrator already tails to stdout, so each line lands
-            # in CloudWatch. The callback prints a visible orchestrator
-            # line per discovered file so operators can confirm wiring
-            # from container logs alone.
-            def _on_tail_started(path):
-                self.log(f"api-log-tailer: streaming {path} -> stdout")
-            self.api_log_tailer = ApiLogTailer(
-                sink_path=IBGATEWAY_LAUNCHER_LOG_SINK,
-                on_tail_started=_on_tail_started,
-            )
-            self.api_log_tailer.start()
+            # in CloudWatch. Gated on trading mode by
+            # _log_capture_enabled() — same gate as ApiTrafficCapture.
+            if log_capture_on:
+                def _on_tail_started(path):
+                    self.log(f"api-log-tailer: streaming {path} -> stdout")
+                self.api_log_tailer = ApiLogTailer(
+                    sink_path=IBGATEWAY_LAUNCHER_LOG_SINK,
+                    on_tail_started=_on_tail_started,
+                )
+                self.api_log_tailer.start()
 
             # Check if process crashed immediately
             time.sleep(2)  # Give it a moment to start
