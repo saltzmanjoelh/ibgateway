@@ -12,18 +12,21 @@ from pathlib import Path
 from typing import List, Optional
 
 from .api_log_tailer import ApiLogTailer
+from .api_traffic_capture import (
+    DEFAULT_SINK_PATH as IBGATEWAY_API_TRAFFIC_SINK,
+    ApiTrafficCapture,
+)
 from .config import Config
-from .jts_log_config import JtsLogConfig
 from .notify import launch_reason, notify_slack
 from .screenshot import ScreenshotHandler
 from .services import XvfbManager, VNCManager, NoVNCManager, WindowManager
 from .port_forwarder import PortForwarder
 
 
-# Sink file the api-log-tailer streams plaintext gateway API logs into.
-# Added to the orchestrator's tail-to-stdout set so each line lands in
-# docker logs / CloudWatch alongside the orchestrator's own status.
-IBGATEWAY_API_LOG_SINK = "/tmp/ibgateway-api.log"
+# Sink for plaintext launcher.log content. The api-log-tailer discovers
+# ``~/Jts/launcher.log`` and spawns ``tail -F`` into this sink; the
+# orchestrator's existing tail process streams the sink to stdout.
+IBGATEWAY_LAUNCHER_LOG_SINK = "/tmp/ibgateway-launcher.log"
 
 
 class ServiceOrchestrator:
@@ -47,6 +50,7 @@ class ServiceOrchestrator:
         self.port_forwarder: Optional[PortForwarder] = None
         self.tail_process: Optional[subprocess.Popen] = None
         self.api_log_tailer: Optional[ApiLogTailer] = None
+        self.api_traffic_capture: Optional[ApiTrafficCapture] = None
 
         # Log files
         self.log_files = [
@@ -56,7 +60,8 @@ class ServiceOrchestrator:
             "/tmp/mcp-server.log",
             "/tmp/websockify.log",
             "/tmp/x11vnc.log",
-            IBGATEWAY_API_LOG_SINK,
+            IBGATEWAY_LAUNCHER_LOG_SINK,
+            IBGATEWAY_API_TRAFFIC_SINK,
         ]
 
         # Setup signal handlers
@@ -86,7 +91,12 @@ class ServiceOrchestrator:
             # In normal mode tail the automation log + the IB Gateway API
             # log sink so plaintext gateway API messages reach CloudWatch.
             self.tail_process = subprocess.Popen(
-                ["tail", "-F", "/tmp/automate-ibgateway.log", IBGATEWAY_API_LOG_SINK],
+                [
+                    "tail", "-F",
+                    "/tmp/automate-ibgateway.log",
+                    IBGATEWAY_LAUNCHER_LOG_SINK,
+                    IBGATEWAY_API_TRAFFIC_SINK,
+                ],
                 stdout=sys.stdout,
                 stderr=sys.stderr
             )
@@ -323,15 +333,32 @@ class ServiceOrchestrator:
         self.log(f"USER={os.getenv('USER', 'root')}")
         self.log(f"DISPLAY={self.config.display}")
 
-        # Pre-seed jts.ini with the keys that turn on plaintext API logging
-        # before the Java process reads its config. Idempotent — does
-        # nothing if the keys are already present. Failures are logged
-        # and ignored: missing API logs is degraded service, not fatal.
+        # Start tcpdump-based capture of IBKR wire-protocol traffic on
+        # the API ports. This is the **only** way to capture per-message
+        # request/response detail with IB Gateway 10.45 — the GUI's
+        # ``Show API messages`` tab shows it but the gateway never
+        # writes it to disk in any plaintext file (the
+        # ``Create API message log file`` toggle in the encrypted
+        # ibg.xml settings file isn't reachable from outside the GUI,
+        # and verified empirically that neither ibgateway.*.ibgzenc
+        # nor GUI ``Export Logs`` includes the per-message records).
+        # Failures here (missing tcpdump, missing capabilities) are
+        # logged and ignored — gateway boot continues with degraded
+        # logging visibility, not aborted.
         try:
-            JtsLogConfig().apply()
-            self.log("jts.ini patched for plaintext API logging")
+            self.api_traffic_capture = ApiTrafficCapture()
+            if self.api_traffic_capture.start():
+                self.log(
+                    f"api-traffic-capture: tcpdump pid={self.api_traffic_capture.pid} "
+                    f"streaming -> stdout"
+                )
+            else:
+                self.log(
+                    "WARNING: api-traffic-capture disabled (tcpdump unavailable "
+                    "or insufficient capabilities)"
+                )
         except Exception as e:
-            self.log(f"WARNING: failed to patch jts.ini for API logging: {e}")
+            self.log(f"WARNING: failed to start api-traffic-capture: {e}")
 
         # Start IB Gateway
         self.log("=== Starting IB Gateway ===")
@@ -356,7 +383,7 @@ class ServiceOrchestrator:
             # spawns ``tail -F`` for each new plaintext log file as it
             # appears — both ``launcher.log`` at the top level and the
             # per-account ``api.YYYYMMDD.log`` once IB Gateway logs in.
-            # Output streams into IBGATEWAY_API_LOG_SINK, which the
+            # Output streams into IBGATEWAY_LAUNCHER_LOG_SINK, which the
             # orchestrator already tails to stdout, so each line lands
             # in CloudWatch. The callback prints a visible orchestrator
             # line per discovered file so operators can confirm wiring
@@ -364,7 +391,7 @@ class ServiceOrchestrator:
             def _on_tail_started(path):
                 self.log(f"api-log-tailer: streaming {path} -> stdout")
             self.api_log_tailer = ApiLogTailer(
-                sink_path=IBGATEWAY_API_LOG_SINK,
+                sink_path=IBGATEWAY_LAUNCHER_LOG_SINK,
                 on_tail_started=_on_tail_started,
             )
             self.api_log_tailer.start()
@@ -565,6 +592,12 @@ class ServiceOrchestrator:
         if self.api_log_tailer:
             try:
                 self.api_log_tailer.stop()
+            except Exception:
+                pass
+
+        if self.api_traffic_capture:
+            try:
+                self.api_traffic_capture.stop()
             except Exception:
                 pass
 
