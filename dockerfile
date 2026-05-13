@@ -7,8 +7,27 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV USER=root
 ENV RESOLUTION=1024x768
 
-# 1. Install noVNC and Websockify
-RUN apt-get update && apt-get install -y x11vnc git python3 python3-pip tcpdump && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+# Diagnostic capture toggle. ``true`` installs tcpdump, which enables the
+# IBKR API wire-protocol capture pipeline in ``ApiTrafficCapture``. Default
+# is ``false`` so the production-trusted image cannot capture API traffic
+# at all — operators have to deliberately build a diagnostic image with
+# ``--build-arg ENABLE_TCPDUMP=true`` AND deliberately deploy it (the
+# ibkr_core deploy workflow inspects the OCI label below and rejects
+# diagnostic images, so a CI-driven prod deploy with this flag set is
+# refused on the consumer side too).
+ARG ENABLE_TCPDUMP=false
+
+# 1. Install noVNC and Websockify (+ tcpdump only when explicitly requested)
+RUN apt-get update && apt-get install -y x11vnc git python3 python3-pip \
+    $([ "${ENABLE_TCPDUMP}" = "true" ] && echo tcpdump) \
+    && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+
+# Surface the diagnostic state in the OCI manifest so a downstream
+# deploy workflow can inspect via ``docker buildx imagetools inspect`` /
+# ``skopeo inspect`` / equivalent and refuse to roll a diagnostic image
+# to production without explicit operator override. The label value
+# mirrors the build arg literally (``true``/``false``).
+LABEL ibgateway.diag.tcpdump="${ENABLE_TCPDUMP}"
 RUN mkdir -p /opt/novnc
 RUN git clone https://github.com/novnc/noVNC.git /opt/novnc
 RUN git clone https://github.com/novnc/websockify /opt/novnc/utils/websockify

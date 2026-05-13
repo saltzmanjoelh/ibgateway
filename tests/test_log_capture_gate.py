@@ -1,10 +1,17 @@
 """Tests for ServiceOrchestrator._log_capture_enabled().
 
-Both log-streaming pipelines (ApiTrafficCapture, ApiLogTailer) surface
-gateway-internal state to CloudWatch. In live trading mode that would
-include real account balances, real order IDs, and SMS-MFA token
-suffixes — leakage we don't want enabled by default. This test guards
-the default-off-in-live behaviour and the env-var override.
+The helper governs ONLY the launcher.log tailer (``ApiLogTailer``).
+Launcher.log carries CCPDispatcher account-refresh dumps with real
+balances + SMS-MFA token hashes in live mode, which we don't want
+in CloudWatch by default.
+
+The wire-protocol capture (``ApiTrafficCapture``) is NOT gated by
+this helper any more — its on/off state is decided at image build
+time by the ``ENABLE_TCPDUMP`` Dockerfile arg (default ``false``).
+Default builds don't install tcpdump, so ``start()`` finds no binary
+and falls back to a logged no-op regardless of trading mode.
+Diagnostic builds opt in deliberately and the consumer-side deploy
+guard refuses to roll them to production via CI.
 """
 from __future__ import annotations
 
