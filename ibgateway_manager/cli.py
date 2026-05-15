@@ -193,8 +193,12 @@ class IBGatewayCLI:
             return test_historical_data()
 
         elif parsed_args.command == "retry-login-after-failure":
-            from .automate_ibgateway import AutomationHandler
-
+            # AutomationHandler is imported at module top — DON'T import it
+            # in-branch here. A function-local ``from .automate_ibgateway
+            # import AutomationHandler`` would poison every other elif in
+            # this function (e.g. ``automate-ibgateway`` at line 151) with
+            # UnboundLocalError, because Python treats the name as a local
+            # everywhere in the function once it sees an import bind it.
             return AutomationHandler(self.config, verbose=verbose).retry_login_after_failure()
 
         elif parsed_args.command == "install-ibgateway":

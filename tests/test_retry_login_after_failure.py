@@ -193,5 +193,48 @@ class TestRetryLoginAfterFailure(unittest.TestCase):
             )
 
 
+class TestCliWiringDoesNotShadowAutomationHandler(unittest.TestCase):
+    """Regression guard against the function-local import that broke
+    test-automation on the first commit of this branch.
+
+    cli.py imports ``AutomationHandler`` at module top. Adding a
+    function-local ``from .automate_ibgateway import AutomationHandler``
+    inside any branch of ``run_command`` would silently poison every
+    *other* branch in the same function — Python treats the name as a
+    local everywhere in the function once it sees an import bind it,
+    and the previously-working sibling branches start raising
+    ``UnboundLocalError: local variable 'AutomationHandler' referenced
+    before assignment``.
+
+    This test walks the AST of ``IBGatewayCLI.run_command`` and fails
+    loudly if anyone adds a function-local re-import.
+    """
+
+    def test_no_function_local_automate_ibgateway_import(self) -> None:
+        import ast
+        import inspect
+        from ibgateway_manager import cli
+
+        src = inspect.getsource(cli)
+        tree = ast.parse(src)
+
+        offenders: list[tuple[int, str]] = []
+        for klass in [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef) and n.name == "IBGatewayCLI"]:
+            for fn in [n for n in klass.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == "run_command"]:
+                for sub in ast.walk(fn):
+                    if isinstance(sub, ast.ImportFrom):
+                        mod = sub.module or ""
+                        if "automate_ibgateway" in mod:
+                            offenders.append((sub.lineno, mod))
+
+        self.assertEqual(
+            offenders, [],
+            "Function-local `from .automate_ibgateway import ...` inside "
+            "IBGatewayCLI.run_command poisons sibling elif branches with "
+            "UnboundLocalError. Move imports to the module top instead. "
+            f"Found at: {offenders}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
