@@ -179,6 +179,43 @@ def build_server(config: Optional[Config] = None) -> FastMCP:
         return {"exit_code": rc, "log_tail": log_tail}
 
     @mcp.tool()
+    def retry_login_after_failure() -> Dict[str, Any]:
+        """Recover from any partially-completed IB Gateway login dialog.
+
+        Designed for the case where xdotool input got interrupted mid-flow
+        and the login dialog ended up with fields half-populated — e.g.
+        username typed, password field empty, "Paper Log In" button
+        greyed out, no error dialog visible. Observed in prod when the
+        orchestrator hit a stray second window (or anything else
+        stealing focus) during the initial type-username → type-password
+        sequence.
+
+        Unlike ``retry_login_after_mfa_failure`` (which assumes the
+        previous password is still in the field and just resubmits),
+        this clears + re-enters both credentials. Idempotent — works
+        regardless of which subset of fields are currently populated.
+
+        Manual / on-demand only — call this after observing the failure
+        mode in ``get_screenshot``. It is NOT invoked automatically
+        anywhere.
+
+        Returns ``exit_code`` (0 = success, 1 = couldn't find gateway
+        window or creds not configured) and the tail of the automation
+        log for diagnostics.
+        """
+        notify_slack(
+            "MCP `retry_login_after_failure`: re-typing credentials + "
+            "resubmitting login. MFA push incoming."
+        )
+        handler = AutomationHandler(cfg, verbose=False)
+        rc = handler.retry_login_after_failure()
+        log_tail = ""
+        log_path = _LOG_FILES["automate"]
+        if Path(log_path).exists():
+            log_tail = Path(log_path).read_text()[-2000:]
+        return {"exit_code": rc, "log_tail": log_tail}
+
+    @mcp.tool()
     def retry_login_after_mfa_failure() -> Dict[str, Any]:
         """Recovery for the IB Gateway 'UNRECOGNIZED USERNAME OR PASSWORD' dialog.
 

@@ -291,6 +291,97 @@ class AutomationHandler:
         self.click_at_coordinates(window_id, 354, 391, "I understand")
         self.log("✓ I understand button clicked")
 
+    def retry_login_after_failure(self) -> int:
+        """Recover from *any* partially-completed login dialog state.
+
+        Designed for the case where the xdotool input flow got
+        interrupted mid-way and the dialog ended up with fields
+        half-populated — e.g. username typed, password field empty,
+        "Paper Log In" button greyed out, no error dialog visible.
+        Observed in prod when the orchestrator hit a stray second
+        window (or anything else stealing focus) during the initial
+        ``type_username`` → ``type_password`` sequence.
+
+        Unlike :meth:`retry_login_after_mfa_failure` (which assumes the
+        previous password is still in the field and just resubmits),
+        this one re-enters both credentials fresh. Idempotent — works
+        regardless of which subset of fields are currently populated.
+
+        Steps:
+
+          1. Escape — closes any modal that might be in front of the
+             login dialog (the post-MFA "UNRECOGNIZED" dialog has its
+             own dedicated handler; Escape here just clears anything
+             unexpected stealing focus).
+          2. Activate the IBKR Gateway login window.
+          3. Walk focus back to the username field via repeated
+             Shift+Tab. The login dialog's tab order is fixed
+             (username → password → submit → ...); five Shift+Tabs is
+             enough to land on username regardless of starting
+             position.
+          4. Select-all + Delete in the username field, then type the
+             configured username.
+          5. Tab to password, select-all + Delete, type the configured
+             password.
+          6. Return to submit.
+
+        Returns 0 on success; 1 if the IBKR Gateway window can't be
+        located or credentials aren't configured.
+        """
+        self.log("--- Retry login after failure (generic) ---")
+
+        if not self.config.username or not self.config.password:
+            self.log(
+                "ERROR: cannot retry login — both IBGATEWAY_USERNAME and "
+                "IBGATEWAY_PASSWORD must be set"
+            )
+            return 1
+
+        # Step 1: clear any stray modal that might be in front. Escape is
+        # a no-op on the login dialog itself; only side effect is
+        # closing whatever else was on top.
+        self.run_xdotool("key", "Escape")
+        time.sleep(0.3)
+
+        # Step 2: find + activate the login window.
+        window_id = self.find_ibgateway_window(timeout=5)
+        if not window_id:
+            self.log("ERROR: IBKR Gateway window not found; cannot retry")
+            return 1
+        self.run_xdotool("windowactivate", "--sync", window_id)
+        time.sleep(0.3)
+
+        # Step 3: walk focus back to the username field. Five Shift+Tabs
+        # is conservative — the longest path back from any focusable
+        # widget on the login dialog is shorter than that, and extra
+        # Shift+Tabs past the first widget are no-ops in Swing.
+        for _ in range(5):
+            self.run_xdotool("key", "shift+Tab")
+            time.sleep(0.05)
+
+        # Step 4: clear + re-type username
+        self.run_xdotool("key", "ctrl+a")
+        time.sleep(0.1)
+        self.run_xdotool("key", "Delete")
+        time.sleep(0.1)
+        self.run_xdotool("type", "--delay", "50", self.config.username)
+        time.sleep(0.3)
+
+        # Step 5: Tab to password, clear, re-type
+        self.run_xdotool("key", "Tab")
+        time.sleep(0.3)
+        self.run_xdotool("key", "ctrl+a")
+        time.sleep(0.1)
+        self.run_xdotool("key", "Delete")
+        time.sleep(0.1)
+        self.run_xdotool("type", "--delay", "50", self.config.password)
+        time.sleep(0.5)
+
+        # Step 6: submit
+        self.run_xdotool("key", "Return")
+        self.log("✓ Re-typed credentials and resubmitted login")
+        return 0
+
     def retry_login_after_mfa_failure(self) -> int:
         """Recovery for the post-MFA "UNRECOGNIZED USERNAME OR PASSWORD" dialog.
 
