@@ -2,10 +2,19 @@
 Docker HEALTHCHECK helper for IB Gateway.
 
 Primary check: visual analysis via the screenshot server's /health endpoint,
-which captures a screenshot and classifies the Connection Status table cell colors.
+which captures a screenshot and classifies the Connection Status table cell
+colors.
 
-Fallback: TCP connection test to the internal API port (used when the screenshot
-server is not yet available during container startup):
+Fallback: TCP connection test to the internal API port. Used in two cases:
+  1. The screenshot server isn't up yet (early container startup).
+  2. The visual check reports UNHEALTHY but the Java process is still alive
+     — typically the gateway sitting on a login dialog or in the daily
+     auto-logoff recovery window. ECS restarts each trigger a fresh MFA
+     push, so we treat "running but visually unhealthy" as healthy at the
+     orchestration layer and let the in-container automation drive
+     recovery. Operators can still see the underlying visual state via the
+     /health JSON endpoint or get_health MCP tool.
+
   - LIVE  -> 127.0.0.1:4001
   - PAPER -> 127.0.0.1:4002
 """
@@ -131,9 +140,28 @@ def main(argv: list[str] | None = None) -> int:
 
     if visual_status == "unhealthy":
         error_msg = detail.get("error") if detail else None
+        error_suffix = f" | error: {error_msg}" if error_msg else ""
+
+        # Visual says something is off. Before failing, check whether the
+        # Java process is still up — if it is, the gateway is in a
+        # transient state (login dialog, daily auto-logoff recovery, MFA
+        # round-trip in progress) and ECS should NOT restart the task.
+        # Each restart triggers a fresh MFA push to the operator's phone,
+        # so we tolerate visually-unhealthy-but-alive states and let the
+        # in-container orchestrator (automate_login / restart paths) drive
+        # recovery instead. Underlying visual state is still queryable via
+        # the /health JSON endpoint and the get_health MCP tool.
+        if check_tcp_listening(cfg):
+            _log(
+                f"[HEALTHCHECK] running-but-visually-unhealthy: "
+                f"{summary}{screenshot_info}{error_suffix}"
+                f" | TCP up at {cfg.host}:{cfg.port} — likely login/recovery, not failing"
+            )
+            return 0
+
         _log(
-            f"[HEALTHCHECK] unhealthy: {summary}{screenshot_info}"
-            + (f" | error: {error_msg}" if error_msg else "")
+            f"[HEALTHCHECK] unhealthy: {summary}{screenshot_info}{error_suffix}"
+            f" | TCP also down at {cfg.host}:{cfg.port}"
         )
         return 1
 
