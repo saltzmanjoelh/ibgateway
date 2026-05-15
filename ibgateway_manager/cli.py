@@ -76,6 +76,15 @@ class IBGatewayCLI:
             ),
         )
 
+        subparsers.add_parser(
+            "retry-login-after-failure",
+            help=(
+                "Recover from a partially-completed login dialog (fields half-typed, "
+                "submit never fired). Clears both credential fields, re-enters them, "
+                "and resubmits. Same as MCP retry_login_after_failure."
+            ),
+        )
+
         # start-services subcommand
         start_parser = subparsers.add_parser("start-services", help="Start all IB Gateway services (orchestrator)")
         start_parser.add_argument("--username", help="IB Gateway username (overrides env var)")
@@ -182,6 +191,15 @@ class IBGatewayCLI:
             from .historical_simple import test_historical_data
 
             return test_historical_data()
+
+        elif parsed_args.command == "retry-login-after-failure":
+            # AutomationHandler is imported at module top — DON'T import it
+            # in-branch here. A function-local ``from .automate_ibgateway
+            # import AutomationHandler`` would poison every other elif in
+            # this function (e.g. ``automate-ibgateway`` at line 151) with
+            # UnboundLocalError, because Python treats the name as a local
+            # everywhere in the function once it sees an import bind it.
+            return AutomationHandler(self.config, verbose=verbose).retry_login_after_failure()
 
         elif parsed_args.command == "install-ibgateway":
             use_latest = getattr(parsed_args, "latest", False)
