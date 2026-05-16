@@ -243,40 +243,6 @@ def build_server(config: Optional[Config] = None) -> FastMCP:
         return {"exit_code": rc, "log_tail": log_tail}
 
     @mcp.tool()
-    def reconnect_existing_session() -> Dict[str, Any]:
-        """Click "Reconnect This Session" on the EXISTING SESSION DETECTED modal.
-
-        IB Gateway puts up this modal when IBKR sees another active session
-        for the same account — typically when the operator just switched
-        between local docker-compose and the ECS task (both share the same
-        credentials, only one can be logged in at a time). Confirming the
-        default-focused "Reconnect This Session" button tells IBKR to boot
-        the other session and let this gateway take over.
-
-        Manual / on-demand only — call this after observing the modal in
-        ``get_screenshot``. It is NOT invoked automatically.
-
-        Does NOT fire an MFA push by itself — IBKR sometimes asks for one
-        after the takeover, but often the other side's existing
-        authentication is enough. The orchestrator's normal flow handles
-        any subsequent MFA prompt.
-
-        Returns ``exit_code`` (0 = success, 1 = modal not found — gateway
-        already past this step) and the tail of the automation log.
-        """
-        # NOT calling notify_slack here — this tool doesn't always trigger
-        # an MFA push, and we don't want to cry wolf. If the takeover
-        # *does* prompt for MFA, the orchestrator's existing cold-start
-        # path is what notifies.
-        handler = AutomationHandler(cfg, verbose=False)
-        rc = handler.reconnect_existing_session()
-        log_tail = ""
-        log_path = _LOG_FILES["automate"]
-        if Path(log_path).exists():
-            log_tail = Path(log_path).read_text()[-2000:]
-        return {"exit_code": rc, "log_tail": log_tail}
-
-    @mcp.tool()
     def restart_gateway() -> Dict[str, Any]:
         """Kill the running IB Gateway process and start a fresh one.
 
