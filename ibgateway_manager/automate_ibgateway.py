@@ -445,63 +445,6 @@ class AutomationHandler:
         self.log("✓ Resubmitted login")
         return 0
 
-    def reconnect_existing_session(self) -> int:
-        """Click "Reconnect This Session" on the EXISTING SESSION DETECTED modal.
-
-        IB Gateway pops this modal when IBKR's auth server sees another
-        active session for the same account during login — typically when
-        the user switches between local docker compose and the ECS task,
-        or when two machines log in to the same IBKR user at once. The
-        modal looks like:
-
-            ┌──────────────── EXISTING SESSION DETECTED ────────────────┐
-            │ Another session with the same user name already exists.    │
-            │ Would you like to login and disconnect the other session?  │
-            │                                                            │
-            │     ┌────── Reconnect This Session ──────┐    Cancel       │
-            │     └────────────────────────────────────┘                 │
-            └────────────────────────────────────────────────────────────┘
-
-        "Reconnect This Session" is the focused default button, so a single
-        Return on the activated window clicks it and tells IBKR to kick the
-        other session and let this one take over.
-
-        Steps:
-          1. Find the modal by window-name substring (we try a couple of
-             casing variants because IB Gateway has been inconsistent
-             across versions).
-          2. Activate it.
-          3. Send Return to click the focused "Reconnect This Session".
-
-        Returns 0 on success; 1 if the modal can't be located (nothing to
-        click — the gateway is probably already past this step, or never
-        saw the conflict in the first place).
-        """
-        self.log("--- Reconnect existing session ---")
-
-        for needle in (
-            "EXISTING SESSION DETECTED",
-            "EXISTING SESSION",
-            "Existing Session",
-        ):
-            wid = self.run_xdotool("search", "--name", needle)
-            if not wid:
-                continue
-            wid = wid.split()[0]
-            self.log(f"Found modal '{needle}' (window {wid})")
-            self.run_xdotool("windowactivate", "--sync", wid)
-            time.sleep(0.3)
-            # "Reconnect This Session" is the default-focused button on
-            # this modal — IB Gateway draws it with the blue focus ring
-            # right when the dialog appears. Return triggers it.
-            self.run_xdotool("key", "Return")
-            time.sleep(0.5)
-            self.log("✓ Pressed Return to confirm Reconnect This Session")
-            return 0
-
-        self.log("ERROR: EXISTING SESSION DETECTED modal not found")
-        return 1
-
     def automate(self) -> int:
         """Main automation function."""
         self.config.print_config()
