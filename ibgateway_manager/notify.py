@@ -13,6 +13,7 @@ webhook configurations without any extra setup.
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
@@ -22,6 +23,43 @@ import urllib.request
 
 _logger = logging.getLogger(__name__)
 _TIMEOUT_SECONDS = 5.0
+_ECS_METADATA_TIMEOUT_SECONDS = 2.0
+
+
+@functools.lru_cache(maxsize=1)
+def _ecs_task_id() -> str:
+    """Return the short ECS task id, or "" when not on ECS / on error.
+
+    AWS publishes a container-local HTTP metadata endpoint at
+    ``$ECS_CONTAINER_METADATA_URI_V4/task`` that returns a JSON document
+    with a ``TaskARN`` field shaped like
+    ``arn:aws:ecs:us-east-1:.../cluster-name/<TASK_ID>``. We extract the
+    last ``/``-separated segment so notifications can disambiguate
+    between a flapping task's old and new IDs (which is exactly what the
+    operator needs when an MFA push arrives — "which task is asking?").
+
+    Cached for the process lifetime: the task id is fixed for the
+    container's life and the endpoint can be flaky in the first second
+    after start, so memoising the first successful read is fine.
+    Returns "" on any failure (env var unset, network error, malformed
+    response) — callers fall back to a plain host-only prefix.
+    """
+    base = os.getenv("ECS_CONTAINER_METADATA_URI_V4", "").strip()
+    if not base:
+        return ""
+    url = f"{base.rstrip('/')}/task"
+    try:
+        with urllib.request.urlopen(url, timeout=_ECS_METADATA_TIMEOUT_SECONDS) as resp:
+            if not 200 <= resp.status < 300:
+                return ""
+            doc = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
+        _logger.debug("ECS task-id metadata lookup failed: %s", exc)
+        return ""
+    task_arn = doc.get("TaskARN") or ""
+    if "/" not in task_arn:
+        return ""
+    return task_arn.rsplit("/", 1)[-1]
 
 
 def launch_reason() -> str:
@@ -65,7 +103,13 @@ def notify_slack(text: str) -> bool:
     except OSError:
         host = "?"
 
-    payload = {"text": f"[ibgateway @ {host}] {text}"}
+    # On ECS the operator usually cares about the task id more than the
+    # container's internal hostname (which is just an opaque IP). When
+    # both are available, prefix with `host/task-abc...`; outside ECS
+    # the task id resolves to "" and we fall back to host-only.
+    task_id = _ecs_task_id()
+    location = f"{host}/{task_id}" if task_id else host
+    payload = {"text": f"[ibgateway @ {location}] {text}"}
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url,
