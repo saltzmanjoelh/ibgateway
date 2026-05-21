@@ -7,8 +7,14 @@ by sampling pixel colors in the Connection Status table's Status column.
 Status cells are classified by their background color:
   green  -> connected / ON (healthy)
   yellow -> inactive / warning (degraded — farms wake on demand)
-  red    -> error / disconnected (unhealthy)
-  unknown -> could not classify (treated as unhealthy)
+  red    -> error / disconnected (unhealthy for api_server/farms;
+            only DEGRADED for api_client — see _compute_overall)
+  unknown -> could not classify
+
+The row coordinates are NOT hard-coded to an absolute window position:
+the Status table is located at runtime by scanning the Status column for
+the coloured band, so the check survives the gateway window sitting at a
+different vertical offset.
 """
 
 from __future__ import annotations
@@ -29,17 +35,24 @@ from .screenshot import ScreenshotHandler
 
 
 # ---------------------------------------------------------------------------
-# Row coordinate table
-# Coordinates assume the IB Gateway window has been moved to (0, 0).
-# Each entry is (row_name, center_x, center_y) within the full display image.
-# The Status column spans x≈510-850; we sample at x=685 (midpoint).
+# Layout constants
+#
+# The Connection Status table has up to four rows; the Status column is a
+# wide coloured cell. We sample a column near its midpoint (x≈685) and
+# locate the rows vertically at runtime — see _locate_row_centers().
 # ---------------------------------------------------------------------------
-_STATUS_ROWS: List[Tuple[str, int, int]] = [
-    ("api_server",           685, 183),
-    ("market_data_farm",     685, 207),
-    ("historical_data_farm", 685, 230),
-    ("api_client",           685, 252),  # only present when clients are connected
+_ROW_NAMES: List[str] = [
+    "api_server",
+    "market_data_farm",
+    "historical_data_farm",
+    "api_client",  # only present once a client has connected this session
 ]
+
+_STATUS_COLUMN_X = 685       # x within the Status column's coloured cell
+_ROW_PITCH = 23              # vertical distance between table rows (px)
+_ROW_OFFSET = 12             # first row centre, below the detected band top
+_SCAN_TOP, _SCAN_BOTTOM = 90, 460   # vertical search window for the table
+_SATURATION_MIN = 45         # min channel spread for a pixel to count "coloured"
 
 # Number of pixels to average around the sample center (7×7 block).
 _SAMPLE_RADIUS = 3
@@ -50,16 +63,16 @@ _SAMPLE_RADIUS = 3
 # ---------------------------------------------------------------------------
 
 class CellColor(str, Enum):
-    GREEN   = "green"    # R<150, G>150, B<100 — connected / ON
-    YELLOW  = "yellow"   # R>150, G>150, B<100 — inactive / warning
-    RED     = "red"      # R>150, G<80,  B<80  — error / disconnected
-    UNKNOWN = "unknown"  # does not match any threshold
+    GREEN   = "green"    # green channel clearly dominant — connected / ON
+    YELLOW  = "yellow"   # red + green both high, blue low — inactive / warning
+    RED     = "red"      # red channel clearly dominant — error / disconnected
+    UNKNOWN = "unknown"  # gray / no clear colour
 
 
 class OverallStatus(str, Enum):
-    HEALTHY   = "healthy"    # All rows green — exit 0
-    DEGRADED  = "degraded"   # API green, ≥1 farm yellow — exit 0 (farms wake on demand)
-    UNHEALTHY = "unhealthy"  # Any red, or API not green — exit 1
+    HEALTHY   = "healthy"    # API + farms green — exit 0
+    DEGRADED  = "degraded"   # API green; a farm yellow OR api_client not connected — exit 0
+    UNHEALTHY = "unhealthy"  # API not green, or a data farm red — exit 1
 
 
 @dataclass
@@ -99,13 +112,24 @@ class ConnectionStatus:
 # ---------------------------------------------------------------------------
 
 def _classify_rgb(r: int, g: int, b: int) -> CellColor:
-    """Classify an RGB pixel as green, yellow, red, or unknown."""
-    if r < 150 and g > 150 and b < 150:
-        return CellColor.GREEN
-    if r > 150 and g > 150 and b < 100:
+    """Classify an RGB pixel as green, yellow, red, or unknown.
+
+    Uses channel DOMINANCE rather than brittle absolute thresholds: the
+    gateway renders status cells anywhere from a dark [0,121,0] green to a
+    bright [109,206,109], and a fixed ``g > 150`` test misses the dark end.
+    """
+    spread = max(r, g, b) - min(r, g, b)
+    if spread < _SATURATION_MIN:
+        return CellColor.UNKNOWN  # gray / no clear colour
+    # Yellow: red AND green both bright, blue low.
+    if r > 130 and g > 130 and b < 110:
         return CellColor.YELLOW
-    if r > 150 and g < 80 and b < 80:
+    # Red: red channel dominant.
+    if r >= g and r >= b:
         return CellColor.RED
+    # Green: green channel dominant.
+    if g >= r and g >= b:
+        return CellColor.GREEN
     return CellColor.UNKNOWN
 
 
@@ -117,34 +141,63 @@ def _sample_rgb(img: "Image.Image", cx: int, cy: int, radius: int = _SAMPLE_RADI
     return tuple(int(v) for v in stat.mean[:3])  # type: ignore[return-value]
 
 
+def _is_colored(rgb: Tuple[int, int, int]) -> bool:
+    """True when a pixel is clearly coloured (not gray UI chrome)."""
+    return max(rgb) - min(rgb) >= _SATURATION_MIN
+
+
+def _locate_row_centers(img: "Image.Image") -> Optional[List[int]]:
+    """Find the y-centres of the status rows.
+
+    Scans the Status column for the top of the coloured status band (three
+    consecutive coloured rows), then steps down by the fixed row pitch.
+    Returns one y per row in _ROW_NAMES, or None if the table isn't found.
+    """
+    x = _STATUS_COLUMN_X
+    run = 0
+    for y in range(_SCAN_TOP, _SCAN_BOTTOM):
+        if _is_colored(_sample_rgb(img, x, y, radius=1)):
+            run += 1
+            if run >= 3:
+                top = y - run + 1
+                return [
+                    top + _ROW_OFFSET + i * _ROW_PITCH
+                    for i in range(len(_ROW_NAMES))
+                ]
+        else:
+            run = 0
+    return None
+
+
 def _compute_overall(rows: List[RowStatus]) -> OverallStatus:
-    """Determine overall health from the list of row statuses."""
-    # Any RED anywhere -> UNHEALTHY
-    if any(r.color == CellColor.RED for r in rows):
+    """Determine overall health from the list of row statuses.
+
+    api_server must be green and no data farm may be red. A disconnected
+    api_client (red / yellow) is DEGRADED, never UNHEALTHY — the gateway is
+    still usable, a client just isn't attached.
+    """
+    by_name = {r.name: r.color for r in rows}
+
+    api = by_name.get("api_server")
+    if api != CellColor.GREEN:
         return OverallStatus.UNHEALTHY
 
-    api_row = next((r for r in rows if r.name == "api_server"), None)
-
-    # API Server must be GREEN; UNKNOWN or YELLOW is not acceptable
-    if api_row is None or api_row.color != CellColor.GREEN:
-        return OverallStatus.UNHEALTHY
-
-    # Farm rows: GREEN or YELLOW are both acceptable
-    # api_client is optional (only present when clients are connected); unknown is OK there
-    required_rows = [r for r in rows if r.name in ("market_data_farm", "historical_data_farm")]
-    for row in required_rows:
-        if row.color not in (CellColor.GREEN, CellColor.YELLOW):
+    # A red data farm is a genuine failure.
+    for farm in ("market_data_farm", "historical_data_farm"):
+        if by_name.get(farm) == CellColor.RED:
             return OverallStatus.UNHEALTHY
 
-    _required = {"api_server", "market_data_farm", "historical_data_farm"}
-    required_all_green = all(r.color == CellColor.GREEN for r in rows if r.name in _required)
-    api_client = next((r for r in rows if r.name == "api_client"), None)
-    api_client_ok = api_client is None or api_client.color in (CellColor.GREEN, CellColor.UNKNOWN)
+    required = ("api_server", "market_data_farm", "historical_data_farm")
+    all_required_green = all(
+        by_name.get(name) == CellColor.GREEN for name in required
+    )
+    api_client = by_name.get("api_client")
 
-    if required_all_green and api_client_ok:
+    if all_required_green and api_client in (CellColor.GREEN, CellColor.UNKNOWN, None):
+        # api_client UNKNOWN/absent == no api_client row rendered — fine.
         return OverallStatus.HEALTHY
 
-    # API is green, at least one required farm is yellow
+    # API green + a farm yellow, or api_client disconnected — usable but degraded.
     return OverallStatus.DEGRADED
 
 
@@ -192,9 +245,19 @@ def check_connection_status(config: Config) -> ConnectionStatus:
             timestamp=ts,
         )
 
+    centers = _locate_row_centers(img)
+    if centers is None:
+        return ConnectionStatus(
+            overall=OverallStatus.UNHEALTHY,
+            rows=[],
+            screenshot_path=path,
+            error="Could not locate the Connection Status table in the screenshot",
+            timestamp=ts,
+        )
+
     rows: List[RowStatus] = []
-    for name, cx, cy in _STATUS_ROWS:
-        rgb = _sample_rgb(img, cx, cy)
+    for name, cy in zip(_ROW_NAMES, centers):
+        rgb = _sample_rgb(img, _STATUS_COLUMN_X, cy)
         rows.append(RowStatus(name=name, color=_classify_rgb(*rgb), sample_rgb=rgb))
 
     return ConnectionStatus(
