@@ -195,8 +195,14 @@ class ServiceOrchestrator:
         self.log("WARNING: MCP server did not become ready within timeout")
         return False
 
-    def _wait_for_automation(self, timeout: int = 90) -> bool:
-        """Wait for automation to complete."""
+    def _wait_for_automation(self, timeout: int = 240) -> bool:
+        """Wait for automation to complete.
+
+        The login automation matches the live screen against reference
+        screenshots and can legitimately take a few minutes, so the
+        window is generous. A timeout is not treated as fatal by the
+        caller — see :meth:`start`.
+        """
         self.log("Waiting for automation to complete...")
 
         for i in range(timeout):
@@ -613,11 +619,25 @@ class ServiceOrchestrator:
                 self.mcp_process = None
                 return 1
 
-        # Wait for automation to complete (only if automation was started)
+        # Wait for automation to complete (only if automation was started).
+        #
+        # A timeout here is deliberately NOT fatal. The login automation
+        # runs as an independent subprocess; it may simply be slow (the
+        # screen-state matching can take minutes). Returning 1 here exits
+        # the orchestrator — and under the container's `always` restart
+        # policy that exit relaunches the whole container, turning a slow
+        # login into an endless restart loop (X/VNC torn down each cycle).
+        # Instead: log it and carry on. The automation subprocess keeps
+        # running and can still finish the login; the operator can also
+        # complete it via VNC. Keeping the container alive is strictly
+        # better than looping.
         if not skip_automation:
             if not self._wait_for_automation():
-                self.log("ERROR: Automation failed to complete")
-                return 1
+                self.log(
+                    "WARNING: automation did not report completion within "
+                    "the wait window — continuing startup anyway (the "
+                    "automation subprocess keeps running; container stays up)"
+                )
 
         # Start port forwarding in background
         self.log("=== Starting socat port forwarding ===")
