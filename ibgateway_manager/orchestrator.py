@@ -31,6 +31,7 @@ from .api_traffic_capture import (
 )
 from .config import Config
 from .notify import launch_reason, notify_slack
+from .recovery_watchdog import RecoveryWatchdog, watchdog_enabled_from_env
 from .screenshot import ScreenshotHandler
 from .services import XvfbManager, VNCManager, NoVNCManager, WindowManager
 from .port_forwarder import PortForwarder
@@ -64,6 +65,7 @@ class ServiceOrchestrator:
         self.tail_process: Optional[subprocess.Popen] = None
         self.api_log_tailer: Optional[ApiLogTailer] = None
         self.api_traffic_capture: Optional[ApiTrafficCapture] = None
+        self.recovery_watchdog: Optional[RecoveryWatchdog] = None
 
         # Log files
         self.log_files = [
@@ -524,14 +526,7 @@ class ServiceOrchestrator:
             return 1
 
         # Determine CLI script path (needed for both automation and screenshot server)
-        # Try /ibgateway_manager_cli.py first (Docker container path), then fallback to script location
-        cli_script = "/ibgateway_manager_cli.py"
-        if not Path(cli_script).exists():
-            # Try to find it relative to this module
-            script_dir = Path(__file__).resolve().parent.parent.parent
-            potential_path = script_dir / "ibgateway_manager_cli.py"
-            if potential_path.exists():
-                cli_script = str(potential_path)
+        cli_script = self._cli_script_path()
 
         if skip_automation:
             self.log("=== Skipping automation (--no-automation flag set) ===")
@@ -661,6 +656,18 @@ class ServiceOrchestrator:
         self.log("")
         self.log("=== All services ready ===")
 
+        # Start the recovery watchdog: detects a genuinely-dead gateway (the
+        # nightly auto-restart that leaves a black screen + API port down) and
+        # auto-restarts + re-logs-in via recover_gateway(). Conservative
+        # (sustained-TCP-down debounce + cooldown) so it never spams MFA pushes.
+        # Disabled when automation is skipped (auto-relogin makes no sense) or
+        # via IBGATEWAY_WATCHDOG_ENABLED=false.
+        if not skip_automation and watchdog_enabled_from_env():
+            self.recovery_watchdog = RecoveryWatchdog.from_config(
+                self.config, recover=self.recover_gateway, log=self.log,
+            )
+            self.recovery_watchdog.start()
+
         # Keep running - wait for tail process or processes
         try:
             # Wait for tail process (which will run until killed)
@@ -675,9 +682,102 @@ class ServiceOrchestrator:
 
         return 0
 
+    def _cli_script_path(self) -> str:
+        """Resolve the CLI entrypoint: the Docker container path first, then a
+        fallback relative to this module (local dev)."""
+        cli_script = "/ibgateway_manager_cli.py"
+        if not Path(cli_script).exists():
+            script_dir = Path(__file__).resolve().parent.parent.parent
+            potential_path = script_dir / "ibgateway_manager_cli.py"
+            if potential_path.exists():
+                cli_script = str(potential_path)
+        return cli_script
+
+    def _kill_gateway_processes(self) -> List[int]:
+        """SIGTERM then SIGKILL any ``/opt/ibgateway/ibgateway`` processes.
+        Mirrors the MCP ``restart_gateway`` tool. Returns the PIDs it signaled."""
+        try:
+            out = subprocess.check_output(
+                ["pgrep", "-f", "/opt/ibgateway/ibgateway"], text=True
+            )
+            pids = [int(p) for p in out.split() if p.strip().isdigit()]
+        except subprocess.CalledProcessError:
+            pids = []
+
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            try:
+                subprocess.check_output(
+                    ["pgrep", "-f", "/opt/ibgateway/ibgateway"], text=True
+                )
+                time.sleep(0.2)
+            except subprocess.CalledProcessError:
+                break
+        else:
+            for pid in pids:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        return pids
+
+    def recover_gateway(self, reason: str) -> dict:
+        """Kill the dead/zombie IB Gateway, relaunch it, and re-run login
+        automation. Invoked by :class:`RecoveryWatchdog` on a sustained
+        API-port-down (the nightly-restart black-screen failure mode); safe to
+        call manually too. Restart alone never re-logs-in, so this also restarts
+        the ``automate-ibgateway`` subprocess."""
+        self.log(f"=== Recovery: restarting IB Gateway — {reason} ===")
+        notify_slack(
+            f"Recovery [{launch_reason()}]: IB Gateway is down ({reason}). "
+            "Restarting it + re-running login. MFA push incoming."
+        )
+        killed = self._kill_gateway_processes()
+        if killed:
+            self.log(f"Recovery: killed stale gateway PIDs {killed}")
+
+        env = os.environ.copy()
+        env["DISPLAY"] = self.config.display
+        self.ibgateway_process = subprocess.Popen(
+            ["/opt/ibgateway/ibgateway"], env=env
+        )
+        new_pid = self.ibgateway_process.pid
+        self.log(f"Recovery: IB Gateway relaunched (PID: {new_pid})")
+        time.sleep(2)
+
+        # Re-run login automation — the relaunched GUI comes up logged out.
+        try:
+            cli_script = self._cli_script_path()
+            with open("/tmp/automate-ibgateway.log", "a") as log_f:
+                self.automation_process = subprocess.Popen(
+                    [sys.executable, "-u", cli_script, "automate-ibgateway"],
+                    stdout=log_f,
+                    stderr=subprocess.STDOUT,
+                )
+            self.log(
+                f"Recovery: login automation restarted "
+                f"(PID: {self.automation_process.pid})"
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.log(f"Recovery: WARNING failed to restart login automation: {exc}")
+
+        return {"killed_pids": killed, "new_pid": new_pid}
+
     def _cleanup(self, signum, frame):
         """Clean up all processes on exit."""
         self.log("Shutting down services...")
+
+        if self.recovery_watchdog is not None:
+            try:
+                self.recovery_watchdog.stop()
+            except Exception:
+                pass
 
         # Stop all processes
         if self.ibgateway_process:
